@@ -7,3 +7,6 @@
 
 # Local graph-node data
 /*/data
+# Lambda artifacts
+lambda-deploy/lambda.zip
+lambda-deploy/dist/
