@@ -1,7 +1,7 @@
 // Quick test to verify registry lookup
 const SNAPSHOT_ID = '0x57853565aa27e14788f9533e9b788b20473b4e81711a16bef0b7210e3fa8a900';
 
-fetch('https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/futarchy-complete-new-v2', {
+fetch('https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/futarchy-complete-new-v3', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

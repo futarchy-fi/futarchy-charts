@@ -15,7 +15,7 @@ import { getSpotPrice } from '../services/spot-price.js';
 // ============================================================================
 
 // Futarchy Registry V2 Subgraph
-const FUTARCHY_REGISTRY_ENDPOINT = 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/futarchy-complete-new-v2';
+const FUTARCHY_REGISTRY_ENDPOINT = 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/futarchy-complete-new-v3';
 
 // Trustur Aggregator - filters which organizations to search
 const AGGREGATOR_ADDRESS = '0xc5eb43d53e2fe5fdde5faf400cc4167e5b5d4fc1';
