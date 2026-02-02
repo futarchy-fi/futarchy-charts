@@ -23,13 +23,80 @@ const AGGREGATOR_ADDRESS = '0xc5eb43d53e2fe5fdde5faf400cc4167e5b5d4fc1';
 // ============================================================================
 
 /**
- * Query Futarchy Registry to find proposal by metadata key
- * The metadataEntries store the Snapshot proposal ID → Futarchy proposal mapping
+ * Query Futarchy Registry to find proposal by snapshot_id in proposal metadata
  * 
- * Returns: { proposalId, organizationId } or null
+ * NEW PATTERN: Search metadataEntries where:
+ * - key = "snapshot_id" 
+ * - value = the snapshot proposal ID
+ * - proposal belongs to an org under our aggregator
+ * 
+ * Returns: { proposalId, proposalAddress, organizationId, organizationName } or null
  */
-async function lookupProposalInRegistry(snapshotProposalId) {
-    // The key is the snapshot proposal ID (normalized, no 0x prefix for some entries)
+async function lookupProposalBySnapshotId(snapshotProposalId) {
+    const normalizedId = snapshotProposalId.toLowerCase();
+
+    // Query metadataEntries at the Proposal level with snapshot_id key
+    // Note: The Graph doesn't support deeply nested filters, so we fetch and verify aggregator in code
+    const query = `{
+        metadataEntries(where: { 
+            key: "snapshot_id",
+            value: "${normalizedId}"
+        }) {
+            value
+            proposal {
+                id
+                proposalAddress
+                title
+                organization { 
+                    id 
+                    name 
+                    aggregator { id }
+                }
+            }
+        }
+    }`;
+
+    try {
+        const response = await fetch(FUTARCHY_REGISTRY_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+
+        const data = await response.json();
+
+        if (data.data?.metadataEntries?.length > 0) {
+            // Filter by aggregator in code since nested GraphQL filter isn't supported
+            const matching = data.data.metadataEntries.find(entry => {
+                const aggregatorId = entry.proposal?.organization?.aggregator?.id?.toLowerCase();
+                return aggregatorId === AGGREGATOR_ADDRESS.toLowerCase();
+            });
+
+            if (matching) {
+                const proposal = matching.proposal;
+                console.log(`   🔍 Found by snapshot_id in "${proposal?.organization?.name || 'unknown'}"`);
+                console.log(`   📋 Proposal: ${proposal?.title || 'N/A'}`);
+                return {
+                    proposalId: proposal?.id,  // Metadata contract address
+                    proposalAddress: proposal?.proposalAddress,  // Trading contract address
+                    organizationId: proposal?.organization?.id,
+                    organizationName: proposal?.organization?.name
+                };
+            }
+        }
+
+        return null;
+    } catch (error) {
+        console.log(`   ⚠️ snapshot_id lookup failed: ${error.message}`);
+        return null;
+    }
+}
+
+/**
+ * FALLBACK: Query by organization metadata key (legacy pattern)
+ * Some organizations store proposal mappings at the org level
+ */
+async function lookupProposalInOrgMetadata(snapshotProposalId) {
     const normalizedId = snapshotProposalId.toLowerCase();
 
     const query = `{
@@ -56,9 +123,10 @@ async function lookupProposalInRegistry(snapshotProposalId) {
 
         if (data.data?.metadataEntries?.length > 0) {
             const entry = data.data.metadataEntries[0];
-            console.log(`   🔍 Registry lookup: found in org "${entry.organization?.name || 'unknown'}"`);
+            console.log(`   🔍 Found by org metadata in "${entry.organization?.name || 'unknown'}"`);
             return {
-                proposalId: entry.value,
+                proposalId: entry.value,  // The value is the proposal address
+                proposalAddress: entry.value,
                 organizationId: entry.organization?.id,
                 organizationName: entry.organization?.name
             };
@@ -66,7 +134,7 @@ async function lookupProposalInRegistry(snapshotProposalId) {
 
         return null;
     } catch (error) {
-        console.log(`   ⚠️ Registry lookup failed: ${error.message}`);
+        console.log(`   ⚠️ Org metadata lookup failed: ${error.message}`);
         return null;
     }
 }
@@ -287,25 +355,46 @@ async function lookupCurrencyStableSymbolInRegistry(organizationId) {
 
 /**
  * Resolve Snapshot proposal ID to Futarchy proposal ID
- * Returns: { proposalId, organizationId, organizationName } or just proposalId if not in registry
+ * 
+ * Priority:
+ * 1. Try snapshot_id lookup in proposal metadata (NEW - most reliable)
+ * 2. Fall back to organization metadata key lookup (legacy)
+ * 3. Use the ID directly as-is (last resort)
+ * 
+ * Returns: { proposalId, proposalAddress, organizationId, organizationName }
  */
 async function resolveProposalId(proposalId) {
     const normalized = proposalId.toLowerCase();
 
-    // Try registry lookup
-    const registryResult = await lookupProposalInRegistry(normalized);
-    if (registryResult) {
+    // 1. Try snapshot_id lookup (NEW - preferred method)
+    const snapshotResult = await lookupProposalBySnapshotId(normalized);
+    if (snapshotResult) {
         return {
-            proposalId: registryResult.proposalId.toLowerCase(),  // Lowercase for subgraph
-            originalProposalId: registryResult.proposalId,  // Original case for links
-            organizationId: registryResult.organizationId,
-            organizationName: registryResult.organizationName
+            proposalId: snapshotResult.proposalId?.toLowerCase(),  // Metadata contract
+            proposalAddress: snapshotResult.proposalAddress?.toLowerCase(),  // Trading contract
+            originalProposalId: snapshotResult.proposalId,
+            organizationId: snapshotResult.organizationId,
+            organizationName: snapshotResult.organizationName
         };
     }
 
+    // 2. Fall back to org metadata lookup (legacy pattern)
+    const orgResult = await lookupProposalInOrgMetadata(normalized);
+    if (orgResult) {
+        return {
+            proposalId: orgResult.proposalId?.toLowerCase(),
+            proposalAddress: orgResult.proposalAddress?.toLowerCase(),
+            originalProposalId: orgResult.proposalId,
+            organizationId: orgResult.organizationId,
+            organizationName: orgResult.organizationName
+        };
+    }
+
+    // 3. Use ID directly (assume it's already a Futarchy proposal ID)
     console.log(`   ℹ️ No registry mapping found, using proposal ID directly`);
     return {
         proposalId: normalized,
+        proposalAddress: normalized,  // Assume it's the trading contract directly
         originalProposalId: proposalId,  // Keep original case
         organizationId: null,
         organizationName: null
@@ -331,8 +420,9 @@ export async function handleMarketEventsRequest(req, res) {
     try {
         // Dynamically resolve proposal ID using registry
         const resolved = await resolveProposalId(proposalId);
-        const subgraphProposalId = resolved.proposalId;
-        console.log(`   🔗 Resolved to: ${subgraphProposalId.slice(0, 10)}...`);
+        // Use proposalAddress (trading contract) for pool lookup
+        const tradingContractId = resolved.proposalAddress || resolved.proposalId;
+        console.log(`   🔗 Resolved to trading contract: ${tradingContractId?.slice(0, 10)}...`);
 
         // ⭐ Lookup organization's coingecko_ticker metadata
         const ticker = await lookupTickerInRegistry(resolved.organizationId);
@@ -361,8 +451,8 @@ export async function handleMarketEventsRequest(req, res) {
             console.log(`   ⏭️ Skipping spot price (no coingecko_ticker configured)`);
         }
 
-        // Fetch pools from Algebra subgraph using resolved ID
-        const pools = await fetchPoolsForProposal(subgraphProposalId);
+        // Fetch pools from Algebra subgraph using trading contract address
+        const pools = await fetchPoolsForProposal(tradingContractId);
         console.log(`   📦 Found ${pools.length} pools`);
 
         // Find YES and NO conditional pools
