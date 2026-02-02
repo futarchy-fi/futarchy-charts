@@ -36,7 +36,7 @@ async function lookupProposalBySnapshotId(snapshotProposalId) {
     const normalizedId = snapshotProposalId.toLowerCase();
 
     // Query metadataEntries at the Proposal level with snapshot_id key
-    // Note: The Graph doesn't support deeply nested filters, so we fetch and verify aggregator in code
+    // Also fetch the proposal's metadata to get coingecko_ticker, closeTimestamp, etc.
     const query = `{
         metadataEntries(where: { 
             key: "snapshot_id",
@@ -47,6 +47,7 @@ async function lookupProposalBySnapshotId(snapshotProposalId) {
                 id
                 proposalAddress
                 title
+                metadata
                 organization { 
                     id 
                     name 
@@ -76,11 +77,35 @@ async function lookupProposalBySnapshotId(snapshotProposalId) {
                 const proposal = matching.proposal;
                 console.log(`   🔍 Found by snapshot_id in "${proposal?.organization?.name || 'unknown'}"`);
                 console.log(`   📋 Proposal: ${proposal?.title || 'N/A'}`);
+
+                // Parse proposal metadata to extract config
+                let proposalConfig = {};
+                if (proposal?.metadata) {
+                    try {
+                        proposalConfig = JSON.parse(proposal.metadata);
+                        console.log(`   📦 Metadata: chain=${proposalConfig.chain}, ticker=${proposalConfig.coingecko_ticker ? 'yes' : 'no'}`);
+                    } catch (e) {
+                        console.log(`   ⚠️ Failed to parse proposal metadata`);
+                    }
+                }
+
                 return {
                     proposalId: proposal?.id,  // Metadata contract address
                     proposalAddress: proposal?.proposalAddress,  // Trading contract address
                     organizationId: proposal?.organization?.id,
-                    organizationName: proposal?.organization?.name
+                    organizationName: proposal?.organization?.name,
+                    // Config from proposal metadata (not organization!)
+                    coingeckoTicker: proposalConfig.coingecko_ticker || null,
+                    closeTimestamp: proposalConfig.closeTimestamp ? parseInt(proposalConfig.closeTimestamp) : null,
+                    startCandleUnix: proposalConfig.startCandleUnix ? parseInt(proposalConfig.startCandleUnix) : null,
+                    twapStartTimestamp: proposalConfig.twapStartTimestamp ? parseInt(proposalConfig.twapStartTimestamp) : null,
+                    twapDurationHours: proposalConfig.twapDurationHours ? parseInt(proposalConfig.twapDurationHours) : null,
+                    twapDescription: proposalConfig.twapDescription || null,
+                    chain: proposalConfig.chain ? parseInt(proposalConfig.chain) : null,
+                    // NEW: Org-level fields now also at proposal level
+                    pricePrecision: proposalConfig.price_precision ? parseInt(proposalConfig.price_precision) : null,
+                    currencyStableRate: proposalConfig.currency_stable_rate || null,
+                    currencyStableSymbol: proposalConfig.currency_stable_symbol || null
                 };
             }
         }
@@ -374,7 +399,19 @@ async function resolveProposalId(proposalId) {
             proposalAddress: snapshotResult.proposalAddress?.toLowerCase(),  // Trading contract
             originalProposalId: snapshotResult.proposalId,
             organizationId: snapshotResult.organizationId,
-            organizationName: snapshotResult.organizationName
+            organizationName: snapshotResult.organizationName,
+            // Pass through all config from proposal metadata
+            coingeckoTicker: snapshotResult.coingeckoTicker,
+            closeTimestamp: snapshotResult.closeTimestamp,
+            startCandleUnix: snapshotResult.startCandleUnix,
+            twapStartTimestamp: snapshotResult.twapStartTimestamp,
+            twapDurationHours: snapshotResult.twapDurationHours,
+            twapDescription: snapshotResult.twapDescription,
+            chain: snapshotResult.chain,
+            // NEW: Org-level fields now also at proposal level
+            pricePrecision: snapshotResult.pricePrecision,
+            currencyStableRate: snapshotResult.currencyStableRate,
+            currencyStableSymbol: snapshotResult.currencyStableSymbol
         };
     }
 
@@ -424,20 +461,22 @@ export async function handleMarketEventsRequest(req, res) {
         const tradingContractId = resolved.proposalAddress || resolved.proposalId;
         console.log(`   🔗 Resolved to trading contract: ${tradingContractId?.slice(0, 10)}...`);
 
-        // ⭐ Lookup organization's coingecko_ticker metadata
-        const ticker = await lookupTickerInRegistry(resolved.organizationId);
+        // ⭐ NEW: Use config from proposal metadata first, fallback to org
+        const ticker = resolved.coingeckoTicker || null;
+        const chartStartRange = resolved.startCandleUnix || null;
+        const closeTimestamp = resolved.closeTimestamp || null;
 
-        // ⭐ Lookup chart_start_range (optional override for chart start date)
-        const chartStartRange = await lookupChartStartRangeInRegistry(resolved.organizationId);
+        if (ticker) {
+            console.log(`   📊 Ticker from proposal: ${ticker.slice(0, 30)}...`);
+        }
+        if (chartStartRange) {
+            console.log(`   📅 Chart start: ${new Date(chartStartRange * 1000).toISOString().split('T')[0]}`);
+        }
 
-        // ⭐ Lookup price_precision (controls decimal places in legend)
-        const pricePrecision = await lookupPricePrecisionInRegistry(resolved.organizationId);
-
-        // ⭐ Lookup currency_stable_rate (rate provider for sDAI→USD conversion)
-        const currencyRateProvider = await lookupCurrencyRateProviderInRegistry(resolved.organizationId);
-
-        // ⭐ Lookup currency_stable_symbol (display symbol like "xDAI")
-        const currencyStableSymbol = await lookupCurrencyStableSymbolInRegistry(resolved.organizationId);
+        // ⭐ Use proposal-level first, fallback to org lookup
+        const pricePrecision = resolved.pricePrecision ?? await lookupPricePrecisionInRegistry(resolved.organizationId);
+        const currencyRateProvider = resolved.currencyStableRate ?? await lookupCurrencyRateProviderInRegistry(resolved.organizationId);
+        const currencyStableSymbol = resolved.currencyStableSymbol ?? await lookupCurrencyStableSymbolInRegistry(resolved.organizationId);
 
         // Fetch sDAI rate for USD conversion
         const sdaiRate = await getSdaiRateCached();
@@ -448,7 +487,7 @@ export async function handleMarketEventsRequest(req, res) {
             spotPrice = await getSpotPrice(ticker);
             console.log(`   💹 Spot price: $${spotPrice?.toFixed(4) || 'N/A'}`);
         } else {
-            console.log(`   ⏭️ Skipping spot price (no coingecko_ticker configured)`);
+            console.log(`   ⏭️ Skipping spot price (no coingecko_ticker in proposal metadata)`);
         }
 
         // Fetch pools from Algebra subgraph using trading contract address
@@ -468,8 +507,10 @@ export async function handleMarketEventsRequest(req, res) {
         const yesPrice = yesPool ? parseFloat(yesPool.price) * sdaiRate : 0;
         const noPrice = noPool ? parseFloat(noPool.price) * sdaiRate : 0;
 
-        // Get timeline (mocked for now)
-        const timeline = getMockedTimeline();
+        // Get timeline from proposal metadata (prefer real data over mocked)
+        const now = Math.floor(Date.now() / 1000);
+        const timelineStart = chartStartRange || (now - 2 * 24 * 60 * 60);  // Default: 2 days ago
+        const timelineEnd = closeTimestamp || (now + 3 * 24 * 60 * 60);     // Default: 3 days from now
 
         // Build response with REAL pool IDs (essential for candles query)
         const response = {
@@ -497,9 +538,10 @@ export async function handleMarketEventsRequest(req, res) {
                 }
             },
             timeline: {
-                start: timeline.start,
-                end: timeline.end,
+                start: timelineStart,
+                end: timelineEnd,
                 chart_start_range: chartStartRange || null,
+                close_timestamp: closeTimestamp || null,  // NEW: explicit close timestamp
                 price_precision: pricePrecision,
                 // If rate provider is configured, include the rate for YES/NO price conversion
                 currency_rate: currencyRateProvider ? sdaiRate : null
