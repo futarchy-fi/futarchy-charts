@@ -1,82 +1,117 @@
-# Futarchy Local Express Server
+# Futarchy Charts
 
-Local development server for Futarchy market data. Replaces external APIs with configurable local endpoints.
+> Market data library and API server for Futarchy prediction markets.
 
-## Quick Start
+## Two Ways to Use
+
+| Mode | Use Case | How |
+|------|----------|-----|
+| **Offline Library** | Import directly in Node.js | `import { getMarketData } from './lib'` |
+| **Express Server** | HTTP API for frontend | `npm start` → `localhost:3030` |
+
+Both use the **same underlying services** — fix once, works everywhere.
+
+---
+
+## Quick Start: Offline Library
+
+**Requirements:** Node.js 22+
+
+```javascript
+import { getMarketData, getRate, getSpotPrice } from './lib/index.js';
+
+// Get all market data for a proposal
+const data = await getMarketData('0x09cb43353c0ece5544919bf...');
+
+console.log('YES:', data.conditional_yes.price);  // → 107.14
+console.log('NO:', data.conditional_no.price);    // → 104.29
+console.log('Chain:', data._meta.chainId);            // → 100
+```
+
+### Available Imports
+
+```javascript
+import {
+    // Main API
+    getMarketData,          // Complete market data (prices, volume, timeline)
+    getCandles,             // Candlestick data for charting
+    resolveProposalId,      // Resolve Snapshot ID → Trading contract
+    
+    // Rate Provider (chain-aware)
+    getRate,                // Fetch rate from ERC-4626 contract
+    getRateCached,          // Cached version (5 min TTL)
+    
+    // Spot Price (GeckoTerminal)
+    getSpotPrice,           // Get current spot price
+    fetchSpotCandles,       // Get historical spot candles
+    
+    // Algebra Subgraph
+    fetchPoolsForProposal,  // Get all pools for a proposal
+    getLatestPrice          // Get latest price from candles
+} from './lib/index.js';
+```
+
+See [`lib/README.md`](lib/README.md) for full API documentation.
+
+---
+
+## Quick Start: Express Server
 
 ```bash
-cd express-server
 npm install
 npm start
 ```
 
 Server runs on `http://localhost:3030`
 
-## Configuration
+### Frontend Config
 
-Set in frontend `.env`:
+Set in your frontend `.env`:
 ```env
 VITE_FUTARCHY_API_URL=http://localhost:3030
 ```
 
 ---
 
-## API Endpoints
+## API Endpoints (Express)
 
-### 1. Market Events (Prices & Volume)
+### 1. Market Prices
 
 ```
 GET /api/v1/market-events/proposals/:proposalId/prices
 ```
 
-**Path Parameters:**
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `proposalId` | Snapshot proposal ID or Futarchy trading contract address | `0x006f4ae...` |
+**Example:**
+```bash
+curl http://localhost:3030/api/v1/market-events/proposals/0x09cb43353.../prices
+```
 
 **Response:**
 ```json
 {
-  "event_id": "0x45e1064348fd8a407d6d1f59fc64b05f633b28fc",
+  "event_id": "0x45e1064348fd8a407d...",
   "conditional_yes": {
-    "price_usd": 139.79,
-    "pool_id": "0xf8346e622557763..."
+    "price": 107.14,
+    "pool_id": "0xf8346e622..."
   },
   "conditional_no": {
-    "price_usd": 139.79,
-    "pool_id": "0x76f78ec457c1b14b..."
+    "price": 104.29,
+    "pool_id": "0x76f78ec45..."
   },
   "spot": {
-    "price_usd": 140.06,
-    "pool_ticker": "0x8189c4c96826d016...::0x89c80a45...-hour-500-xdai"
-  },
-  "company_tokens": {
-    "base": { "tokenSymbol": "GNO" },
-    "currency": {
-      "tokenSymbol": "sDAI",
-      "stableSymbol": "xDAI"
-    }
+    "price": 88.24,
+    "pool_ticker": "0x8189c4c..."
   },
   "timeline": {
     "start": 1769329110,
     "end": 1769761110,
-    "chart_start_range": 1769385600,
-    "price_precision": 2,
-    "currency_rate": 1.223
+    "currency_rate": 1.224
   },
-  "volume": {
-    "conditional_yes": {
-      "status": "ok",
-      "pool_id": "0xf8346e622557763...",
-      "volume": "77.31",
-      "volume_usd": "77.31"
-    },
-    "conditional_no": { ... }
+  "_meta": {
+    "chainId": 100
   }
 }
 ```
-
----
 
 ### 2. GraphQL Candles Proxy
 
@@ -84,151 +119,107 @@ GET /api/v1/market-events/proposals/:proposalId/prices
 POST /subgraphs/name/algebra-proposal-candles-v1
 ```
 
-Proxies GraphQL queries to the Algebra candles subgraph with optional spot price injection.
+Proxies GraphQL queries to the Algebra candles subgraph with spot price injection.
 
-**Request Body:**
-```json
-{
-  "query": "...",
-  "variables": {
-    "yesPoolId": "0x...",
-    "noPoolId": "0x...",
-    "minTimestamp": 1769385600,
-    "maxTimestamp": 1769761110,
-    "poolTicker": "0x8189...::0x89c80...-hour-500-xdai"
-  }
-}
+---
+
+## Price Conversion
+
+All prices are returned in the **currency token unit** (e.g., sDAI, xDAI).
+
+| Source | Raw Unit | Conversion |
+|--------|----------|------------|
+| YES/NO Pools | sDAI | `price × currency_rate` |
+| SPOT (GeckoTerminal) | Already converted | No conversion needed |
+
+**Why the difference?**
+- Algebra pools store prices in the raw currency token (sDAI)
+- GeckoTerminal already returns prices in display units
+
+The `currency_rate` comes from an on-chain rate provider (e.g., `0x89c80a45...` for sDAI→xDAI on Gnosis). This ensures YES, NO, and SPOT prices are all in the same unit for charting.
+
+## Architecture
+
+```
+futarchy-charts/
+├── src/
+│   ├── index.js              # Express server
+│   ├── routes/
+│   │   ├── market-events.js  # /api/v1/market-events/...
+│   │   └── graphql-proxy.js  # GraphQL candles proxy
+│   └── services/             ← SHARED BY BOTH
+│       ├── algebra-client.js # Pool data from subgraph
+│       ├── rate-provider.js  # Chain-aware rate fetching
+│       └── spot-price.js     # GeckoTerminal prices
+│
+├── lib/                       ← OFFLINE MODULE
+│   ├── index.js              # Main exports
+│   └── README.md             # Library docs
+│
+└── example-test-offline.js   # Test all imports
 ```
 
-**Response:** Standard GraphQL response with candles.
+---
+
+## Data Sources
+
+| Source | Data | Used For |
+|--------|------|----------|
+| **Futarchy Registry** | Proposal metadata, tickers, timestamps | Config |
+| **Algebra Subgraph** | YES/NO pool prices, candles | Prices |
+| **GeckoTerminal** | Spot prices from AMM pools | Overlay |
+| **Rate Provider RPC** | Currency → USD conversion | Rate |
+
+### Chain Support
+
+| Chain ID | Name | RPC |
+|----------|------|-----|
+| 1 | Ethereum | eth.llamarpc.com |
+| 100 | Gnosis | rpc.gnosis.gateway.fm |
+
+The chain is read from **proposal metadata** — no hardcoding needed.
 
 ---
 
 ## Metadata Configuration
 
-Metadata is stored in the **Futarchy Registry** subgraph per organization. The server reads these keys:
+Set these keys in the Futarchy Registry per proposal or organization:
 
-| Key | Type | Description | Example |
-|-----|------|-------------|---------|
-| `{snapshotProposalId}` | address | Maps Snapshot ID → Trading contract | `0x45e1064348fd...` |
-| `coingecko_ticker` | string | Spot price source (GeckoTerminal or multihop) | `0x8189...::0x89c80...-hour-500-xdai` |
-| `chart_start_range` | unix timestamp | Override chart start date | `1769385600` |
-| `price_precision` | 0-10 | Decimal places in chart legend | `2` |
-| `currency_stable_rate` | address | Rate provider for USD conversion | `0x89c80a4540a00b52...` |
-| `currency_stable_symbol` | string | Display symbol for stable currency | `xDAI` |
-
----
-
-## Spot Price Formats
-
-The `coingecko_ticker` field supports multiple formats:
-
-### 1. Simple GeckoTerminal Pool
-```
-0x8189c4c96826d016a99986394103dfa9ae41e7ee
-```
-Fetches from: `api.geckoterminal.com/api/v2/networks/xdai/pools/{address}/ohlc`
-
-### 2. Multihop Route
-```
-0x8189c4c96826d016a99986394103dfa9ae41e7ee::0x89c80a4540a00b5270347e02e2e144c71da2eced-hour-500-xdai
-```
-Format: `{pool1}::{pool2}-{timeframe}-{limit}-{network}`
-
-- Fetches candles from both pools
-- Multiplies prices (e.g., GNO/WXDAI × WXDAI/sDAI = GNO/sDAI)
-
----
-
-## Architecture
-
-```
-express-server/
-├── src/
-│   ├── index.js              # Express app entry point
-│   ├── routes/
-│   │   ├── market-events.js  # /api/v1/market-events/... handler
-│   │   └── graphql-proxy.js  # GraphQL candles proxy + spot injection
-│   └── services/
-│       ├── algebra-client.js # Algebra pools subgraph client
-│       ├── sdai-rate.js      # sDAI rate provider (on-chain RPC)
-│       └── spot-price.js     # GeckoTerminal + multihop spot price
-├── package.json
-└── README.md
-```
-
----
-
-## Data Flow
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Frontend UI   │────▶│  Express Server │────▶│   Data Sources  │
-│  (useFutarchy)  │     │   :3030         │     │                 │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        │                       │                       │
-        │ GET /api/v1/...       │ ┌─────────────────────┼───────────────────┐
-        │                       │ │                     │                   │
-        │                       ▼ ▼                     ▼                   ▼
-        │               Futarchy Registry       Algebra Pools       GeckoTerminal
-        │               (metadata lookup)       (YES/NO prices)     (spot candles)
-        │                       │                     │                   │
-        │                       │                     ▼                   │
-        │                       │               sDAI Rate Provider ◀──────┘
-        │                       │               (on-chain RPC)
-        │                       │                     │
-        │                       ▼                     ▼
-        │               ┌─────────────────────────────────────────┐
-        │               │            JSON Response                │
-        │◀──────────────│  prices, volume, timeline, metadata     │
-        │               └─────────────────────────────────────────┘
-```
+| Key | Description | Example |
+|-----|-------------|---------|
+| `snapshot_id` | Maps Snapshot → Trading contract | `0x09cb43...` |
+| `coingecko_ticker` | Spot price source | `0x8189c4c...-hour-500-xdai` |
+| `chain` | Chain ID for RPC calls | `100` |
+| `closeTimestamp` | Market close time | `1772236800` |
+| `currency_stable_rate` | Rate provider address | `0x89c80a45...` |
+| `price_precision` | Decimal places | `2` |
 
 ---
 
 ## Development
 
-### Run with auto-reload
 ```bash
+# Run Express with auto-reload
 npm run dev
+
+# Test offline module
+node example-test-offline.js
+
+# Test individual features
+node test-lookup.js
+node test-multihop.js
 ```
-
-### Test scripts
-```bash
-node test-lookup.js          # Test registry lookup
-node test-proposal-volume.js # Test volume calculation
-node test-multihop.js        # Test multihop spot price
-node test-timestamps.js      # Test timestamp handling
-```
-
----
-
-## Environment Variables
-
-The server uses hardcoded endpoints (no .env required), but you can modify:
-
-| Constant | Location | Description |
-|----------|----------|-------------|
-| `PORT` | index.js | Server port (default: 3030) |
-| `FUTARCHY_REGISTRY_ENDPOINT` | market-events.js | Registry subgraph URL |
-| `AGGREGATOR_ADDRESS` | market-events.js | Filter for organizations |
-| `ALGEBRA_CANDLES_ENDPOINT` | graphql-proxy.js | Candles subgraph URL |
 
 ---
 
 ## Troubleshooting
 
-### "No pools found"
-- Verify the proposal ID exists in the Futarchy Registry
-- Check that the Snapshot ID is mapped to a trading contract
-
-### "Spot price not available"
-- Ensure `coingecko_ticker` metadata is set
-- Verify pool address exists on GeckoTerminal
-
-### "Currency rate null"
-- Set `currency_stable_rate` in metadata to rate provider address
-- Set `currency_stable_symbol` for display name (e.g., "xDAI")
+| Problem | Solution |
+|---------|----------|
+| "No pools found" | Check proposal exists in Registry |
+| "Spot price N/A" | Set `coingecko_ticker` in metadata |
+| "Rate is 1.0" | Set `currency_stable_rate` address |
+| "fetch is not defined" | Use Node.js 22+ |
 
 ---
 

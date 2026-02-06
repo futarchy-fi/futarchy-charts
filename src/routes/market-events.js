@@ -7,7 +7,7 @@
  */
 
 import { fetchPoolsForProposal } from '../services/algebra-client.js';
-import { getSdaiRateCached } from '../services/sdai-rate.js';
+import { getRateCached } from '../services/rate-provider.js';
 import { getSpotPrice } from '../services/spot-price.js';
 
 // ============================================================================
@@ -297,7 +297,7 @@ async function lookupPricePrecisionInRegistry(organizationId) {
 
 /**
  * Query Futarchy Registry for organization's currency_stable_rate metadata
- * This is a rate provider address for converting sDAI to USD
+ * This is a rate provider address for converting currency token to USD
  * When present, YES/NO chart prices should be multiplied by this rate
  * Store as address (e.g., "0x89c80a4540a00b5270347e02e2e144c71da2eced")
  */
@@ -478,8 +478,11 @@ export async function handleMarketEventsRequest(req, res) {
         const currencyRateProvider = resolved.currencyStableRate ?? await lookupCurrencyRateProviderInRegistry(resolved.organizationId);
         const currencyStableSymbol = resolved.currencyStableSymbol ?? await lookupCurrencyStableSymbolInRegistry(resolved.organizationId);
 
-        // Fetch sDAI rate for USD conversion
-        const sdaiRate = await getSdaiRateCached();
+        // Get chain from proposal metadata (default: 100 = Gnosis)
+        const chainId = resolved.chain || 100;
+
+        // Fetch currency rate using chain-aware provider
+        const currencyRate = await getRateCached(currencyRateProvider, chainId);
 
         // ⭐ Only fetch spot price if coingecko_ticker is configured
         let spotPrice = null;
@@ -503,9 +506,9 @@ export async function handleMarketEventsRequest(req, res) {
         const companyToken = proposal?.companyToken;
         const currencyToken = proposal?.currencyToken;
 
-        // Convert sDAI prices to USD
-        const yesPrice = yesPool ? parseFloat(yesPool.price) * sdaiRate : 0;
-        const noPrice = noPool ? parseFloat(noPool.price) * sdaiRate : 0;
+        // Convert prices to USD using chain-aware currency rate
+        const yesPrice = yesPool ? parseFloat(yesPool.price) * currencyRate : 0;
+        const noPrice = noPool ? parseFloat(noPool.price) * currencyRate : 0;
 
         // Get timeline from proposal metadata (prefer real data over mocked)
         const now = Math.floor(Date.now() / 1000);
@@ -516,15 +519,15 @@ export async function handleMarketEventsRequest(req, res) {
         const response = {
             event_id: resolved.originalProposalId,  // Original case for links
             conditional_yes: {
-                price_usd: yesPrice,
+                price: yesPrice,
                 pool_id: yesPool?.id || ''  // Real pool ID from subgraph
             },
             conditional_no: {
-                price_usd: noPrice,
+                price: noPrice,
                 pool_id: noPool?.id || ''   // Real pool ID from subgraph
             },
             spot: {
-                price_usd: spotPrice,
+                price: spotPrice,
                 // ⭐ Include ticker so graphql-proxy can fetch spot candles
                 pool_ticker: ticker || null
             },
@@ -533,7 +536,7 @@ export async function handleMarketEventsRequest(req, res) {
                     tokenSymbol: companyToken?.symbol || 'PNK'
                 },
                 currency: {
-                    tokenSymbol: currencyToken?.symbol || 'sDAI',
+                    tokenSymbol: currencyToken?.symbol || 'CURRENCY',
                     stableSymbol: currencyStableSymbol || null  // e.g., "xDAI" from metadata
                 }
             },
@@ -544,7 +547,7 @@ export async function handleMarketEventsRequest(req, res) {
                 close_timestamp: closeTimestamp || null,  // NEW: explicit close timestamp
                 price_precision: pricePrecision,
                 // If rate provider is configured, include the rate for YES/NO price conversion
-                currency_rate: currencyRateProvider ? sdaiRate : null
+                currency_rate: currencyRateProvider ? currencyRate : null
             },
             volume: {
                 conditional_yes: yesPool ? (() => {

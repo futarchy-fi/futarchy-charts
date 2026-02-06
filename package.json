@@ -1,12 +1,17 @@
 {
-    "name": "futarchy-local-server",
+    "name": "futarchy-charts",
     "version": "1.0.0",
-    "description": "Local Express server replacing Futarchy API using Algebra pools data",
+    "description": "Futarchy market data library and Express server",
     "type": "module",
     "main": "src/index.js",
+    "exports": {
+        ".": "./src/index.js",
+        "./lib": "./lib/index.js"
+    },
     "scripts": {
         "start": "node src/index.js",
-        "dev": "node --watch src/index.js"
+        "dev": "node --watch src/index.js",
+        "test:lib": "node lib/test.js"
     },
     "dependencies": {
         "cors": "^2.8.5",

@@ -44,9 +44,9 @@ function compare(local, remote) {
         passed = false;
     }
 
-    // 2. Spot Price (price_usd)
-    const lSpot = parseFloat(l.spot.price_usd);
-    const rSpot = parseFloat(r.spot.price_usd);
+    // 2. Spot Price (price)
+    const lSpot = parseFloat(l.spot.price);
+    const rSpot = parseFloat(r.spot.price);
     const diff = Math.abs(lSpot - rSpot);
 
     // Tolerance slightly looser for spot price variances across different request times

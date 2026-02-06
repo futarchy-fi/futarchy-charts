@@ -399,13 +399,10 @@ export async function fetchSpotCandles(configString = DEFAULT_CONFIG, limit = nu
         let candles = await fetchCandlesFromGecko(poolAddress, config.network, config.interval, config.limit);
         console.log('[spotPrice] Fetched', candles.length, 'candles');
 
-        // Apply rate if specified
-        let rate = 1;
-        if (config.rateProvider) {
-            rate = await getRate(config.rateProvider, config.network);
-            candles = candles.map(c => ({ ...c, value: c.value / rate }));
-            console.log('[spotPrice] Applied rate (divided by):', rate);
-        }
+        // Note: Rate provider info is available but NOT applied to candles
+        // The GeckoTerminal pool already returns prices in the correct unit
+        // Rate is passed through for reference/metadata
+        const rate = config.rateProvider ? 1 : null;
 
         // Apply invert if specified
         if (config.invert) {
