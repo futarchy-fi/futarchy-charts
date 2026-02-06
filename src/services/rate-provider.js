@@ -45,11 +45,8 @@ export async function getRate(providerAddress, chainId = 100) {
     }
 
     if (!providerAddress) {
-        console.log(`[rate-provider] No provider address, using default for ${chain.name}`);
-        providerAddress = chain.defaultRateProvider;
-        if (!providerAddress) {
-            return 1;  // No default, return 1:1
-        }
+        // No provider = no conversion (rate = 1)
+        return 1;
     }
 
     try {
