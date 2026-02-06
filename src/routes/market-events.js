@@ -485,10 +485,17 @@ export async function handleMarketEventsRequest(req, res) {
         const currencyRate = await getRateCached(currencyRateProvider, chainId);
 
         // ⭐ Only fetch spot price if coingecko_ticker is configured
+        // If ticker includes :: it has a rate provider built-in, otherwise apply currencyRate
         let spotPrice = null;
         if (ticker) {
-            spotPrice = await getSpotPrice(ticker);
-            console.log(`   💹 Spot price: $${spotPrice?.toFixed(4) || 'N/A'}`);
+            const rawSpotPrice = await getSpotPrice(ticker);
+            // Check if ticker already has rate provider (::)
+            const tickerHasRateProvider = ticker.includes('::');
+            if (rawSpotPrice !== null) {
+                // If ticker has ::, rate is already applied; otherwise multiply by currencyRate
+                spotPrice = tickerHasRateProvider ? rawSpotPrice : rawSpotPrice * currencyRate;
+            }
+            console.log(`   💹 Spot price: $${spotPrice?.toFixed(4) || 'N/A'} (rate ${tickerHasRateProvider ? 'built-in' : 'applied'})`);
         } else {
             console.log(`   ⏭️ Skipping spot price (no coingecko_ticker in proposal metadata)`);
         }
