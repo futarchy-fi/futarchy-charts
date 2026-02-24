@@ -163,7 +163,9 @@ async function checkpoint_lookupBySnapshotId(snapshotId) {
                 proposalAddress
                 title
                 metadata
-                organization
+                organization {
+                    id
+                }
             }
         }`);
 
@@ -172,16 +174,20 @@ async function checkpoint_lookupBySnapshotId(snapshotId) {
 
         // Check if the organization belongs to our aggregator
         if (proposal.organization) {
+            const orgId = typeof proposal.organization === 'string' ? proposal.organization : proposal.organization?.id;
             const orgData = await gqlFetch(ENDPOINTS.registry, `{
-                organizations(where: { id: "${proposal.organization}" }) {
+                organizations(where: { id: "${orgId}" }) {
                     id
                     name
-                    aggregator
+                    aggregator {
+                        id
+                    }
                 }
             }`);
 
             const org = orgData?.organizations?.[0];
-            if (org?.aggregator?.toLowerCase() === AGGREGATOR_ADDRESS.toLowerCase()) {
+            const aggId = typeof org?.aggregator === 'string' ? org?.aggregator : org?.aggregator?.id;
+            if (aggId?.toLowerCase() === AGGREGATOR_ADDRESS.toLowerCase()) {
                 let config = {};
                 if (proposal.metadata) {
                     try { config = JSON.parse(proposal.metadata); } catch (e) { /* ignore */ }

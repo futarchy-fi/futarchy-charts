@@ -174,6 +174,13 @@ async function checkpoint_fetchPools(proposalAddress, chainId = 100) {
         ...pool,
         // Strip chain prefix from pool ID for consistent downstream usage
         id: stripChainPrefix(pool.id),
+        // Checkpoint volumes are in raw wei (18 decimals) — normalize to human-readable
+        volumeToken0: pool.volumeToken0
+            ? String(parseFloat(pool.volumeToken0) / 1e18)
+            : '0',
+        volumeToken1: pool.volumeToken1
+            ? String(parseFloat(pool.volumeToken1) / 1e18)
+            : '0',
         // Checkpoint returns token0/token1 as addresses, not objects
         // We create minimal token objects for compatibility
         token0: typeof pool.token0 === 'string'

@@ -517,10 +517,20 @@ export async function handleMarketEventsRequest(req, res) {
         const yesPool = pools.find(p => p.outcomeSide === 'YES' && p.type === 'CONDITIONAL');
         const noPool = pools.find(p => p.outcomeSide === 'NO' && p.type === 'CONDITIONAL');
 
-        // Get company token from proposal
+        console.log(`   [DEBUG] Getting tokens...`);
+        // Get company token from proposal (Graph Node has nested objects, Checkpoint doesn't)
         const proposal = pools[0]?.proposal;
-        const companyToken = proposal?.companyToken;
-        const currencyToken = proposal?.currencyToken;
+        let companyToken = proposal?.companyToken;
+        let currencyToken = proposal?.currencyToken;
+
+        // Checkpoint fallback: parse token symbols from pool name (e.g., "YES_GNO / YES_sDAI")
+        if (!companyToken?.symbol && yesPool?.name) {
+            const match = yesPool.name.match(/^YES_(\w+)\s*\/\s*YES_(\w+)$/);
+            if (match) {
+                companyToken = { id: null, symbol: match[1] };    // e.g., "GNO"
+                currencyToken = { id: null, symbol: match[2] };   // e.g., "sDAI"
+            }
+        }
 
         // Convert prices to USD using chain-aware currency rate
         const yesPrice = yesPool ? parseFloat(yesPool.price) * currencyRate : 0;
@@ -531,6 +541,7 @@ export async function handleMarketEventsRequest(req, res) {
         const timelineStart = chartStartRange || (now - 2 * 24 * 60 * 60);  // Default: 2 days ago
         const timelineEnd = closeTimestamp || (now + 3 * 24 * 60 * 60);     // Default: 3 days from now
 
+        console.log(`   [DEBUG] Building response...`);
         // Build response with REAL pool IDs (essential for candles query)
         const response = {
             event_id: resolved.originalProposalId,  // Original case for links
@@ -611,11 +622,15 @@ export async function handleMarketEventsRequest(req, res) {
 
         if (yesPool && noPool) {
             console.log(`   ✅ YES: $${yesPrice.toFixed(4)} (${yesPool.id.slice(0, 10)}...), NO: $${noPrice.toFixed(4)} (${noPool.id.slice(0, 10)}...)`);
+            console.log(`   [DEBUG] Sending res.json...`);
+            res.json(response);
+            console.log(`   [DEBUG] Finished!`);
         } else {
             console.log(`   ⚠️ Missing pools - YES: ${!!yesPool}, NO: ${!!noPool}`);
+            console.log(`   [DEBUG] Sending res.json (missing pools)...`);
+            res.json(response);
+            console.log(`   [DEBUG] Finished!`);
         }
-
-        res.json(response);
 
     } catch (error) {
         console.error('   ❌ Error:', error.message);
