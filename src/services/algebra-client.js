@@ -1,9 +1,15 @@
 /**
  * Algebra Subgraph Client
  * Fetches pool data from Algebra candles subgraph
+ * 
+ * NOTE: This module uses Graph Node queries directly.
+ * For mode-aware (Graph Node / Checkpoint) usage, prefer the
+ * candles-adapter: ../adapters/candles-adapter.js
  */
 
-const ALGEBRA_ENDPOINT = 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/algebra-proposal-candles-v1';
+import { ENDPOINTS } from '../config/endpoints.js';
+
+const ALGEBRA_ENDPOINT = ENDPOINTS.candles;
 
 /**
  * Fetch all pools for a proposal

@@ -9,8 +9,9 @@
  */
 
 import { fetchSpotCandles } from '../services/spot-price.js';
+import { proxyCandlesQuery } from '../adapters/candles-adapter.js';
+import { getRateCached } from '../services/rate-provider.js';
 
-const ALGEBRA_ENDPOINT = 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/algebra-proposal-candles-v1';
 const ONE_HOUR = 3600;
 
 /**
@@ -71,15 +72,16 @@ function forwardFillCandles(candles, maxTimestamp) {
 /**
  * Convert spot candles from GeckoTerminal format to subgraph format
  * and filter to the requested date range
+ * @param {number} rateDivisor - If ticker has ::, divide values by rate to get sDAI terms
  */
-function convertSpotCandles(spotData, minTimestamp, maxTimestamp) {
+function convertSpotCandles(spotData, minTimestamp, maxTimestamp, rateDivisor = 1) {
     if (!spotData?.candles || spotData.candles.length === 0) return [];
 
     return spotData.candles
         .filter(c => c.time >= minTimestamp && c.time <= maxTimestamp)
         .map(c => ({
             periodStartUnix: String(c.time),
-            close: String(c.value)
+            close: String(c.value / rateDivisor)
         }));
 }
 
@@ -112,16 +114,12 @@ export async function handleGraphQLRequest(req, res) {
             : Promise.resolve({ candles: [], price: null, error: null });
 
         // Fetch both subgraph data and spot candles in parallel
-        const [subgraphResponse, spotData] = await Promise.all([
-            fetch(ALGEBRA_ENDPOINT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query, variables })
-            }),
+        const [subgraphResult, spotData] = await Promise.all([
+            proxyCandlesQuery(query, variables),
             spotPromise
         ]);
 
-        const data = await subgraphResponse.json();
+        const data = subgraphResult;
 
         if (data.errors) {
             console.log(`   ⚠️ GraphQL errors:`, data.errors[0]?.message);
@@ -155,7 +153,18 @@ export async function handleGraphQLRequest(req, res) {
             console.log(`   🔍 Spot range: ${new Date(firstSpot.time * 1000).toISOString()} to ${new Date(lastSpot.time * 1000).toISOString()}`);
             console.log(`   🔍 Request range: ${new Date(minTimestamp * 1000).toISOString()} to ${new Date(maxTimestamp * 1000).toISOString()}`);
         }
-        const spotCandles = convertSpotCandles(spotData, minTimestamp, maxTimestamp);
+        // Compute rate divisor for spot candles when ticker has :: rate provider
+        let spotRateDivisor = 1;
+        if (poolTicker && poolTicker.includes('::')) {
+            const rateProviderAddress = poolTicker.split('::')[1]?.split('-')[0];
+            const networkPart = poolTicker.split('-').pop() || 'xdai';
+            const chainId = networkPart === 'xdai' ? 100 : 1;
+            if (rateProviderAddress) {
+                spotRateDivisor = await getRateCached(rateProviderAddress, chainId);
+                console.log(`   💱 Spot rate divisor: ${spotRateDivisor.toFixed(6)}`);
+            }
+        }
+        const spotCandles = convertSpotCandles(spotData, minTimestamp, maxTimestamp, spotRateDivisor);
         data.data.spotCandles = spotCandles;
 
         const yesFilled = data.data?.yesCandles?.length || 0;

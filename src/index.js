@@ -16,8 +16,12 @@ import { handleGraphQLRequest } from './routes/graphql-proxy.js';
 const app = express();
 const PORT = 3030;
 
-// Middleware
-app.use(cors());
+// Middleware — allow all origins for local dev
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Apollo-Require-Preflight'],
+}));
 app.use(express.json());
 
 // Health check
@@ -40,7 +44,7 @@ app.get('/api/v1/market-events/proposals/:proposalId/prices', handleMarketEvents
 app.post('/subgraphs/name/algebra-proposal-candles-v1', handleGraphQLRequest);
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log('');
     console.log('🚀 Futarchy Local Server Running');
     console.log('─'.repeat(50));

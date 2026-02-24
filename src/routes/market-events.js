@@ -6,6 +6,9 @@
  * Falls back to Algebra pools data + spot price from GeckoTerminal
  */
 
+import { fetchPoolsForProposal as fetchPoolsAdapter } from '../adapters/candles-adapter.js';
+import { resolveProposalId as resolveProposalAdapter, lookupOrgMetadata as lookupOrgMetadataAdapter } from '../adapters/registry-adapter.js';
+import { IS_CHECKPOINT, ENDPOINTS } from '../config/endpoints.js';
 import { fetchPoolsForProposal } from '../services/algebra-client.js';
 import { getRateCached } from '../services/rate-provider.js';
 import { getSpotPrice } from '../services/spot-price.js';
@@ -14,8 +17,8 @@ import { getSpotPrice } from '../services/spot-price.js';
 // CONFIGURATION - Easy to modify
 // ============================================================================
 
-// Futarchy Registry V2 Subgraph
-const FUTARCHY_REGISTRY_ENDPOINT = 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/futarchy-complete-new-v3';
+// Futarchy Registry V2 Subgraph (used by inline Graph Node functions below)
+const FUTARCHY_REGISTRY_ENDPOINT = ENDPOINTS.registry;
 
 // Trustur Aggregator - filters which organizations to search
 const AGGREGATOR_ADDRESS = '0xc5eb43d53e2fe5fdde5faf400cc4167e5b5d4fc1';
@@ -456,7 +459,9 @@ export async function handleMarketEventsRequest(req, res) {
 
     try {
         // Dynamically resolve proposal ID using registry
-        const resolved = await resolveProposalId(proposalId);
+        const resolved = IS_CHECKPOINT
+            ? await resolveProposalAdapter(proposalId)
+            : await resolveProposalId(proposalId);
         // Use proposalAddress (trading contract) for pool lookup
         const tradingContractId = resolved.proposalAddress || resolved.proposalId;
         console.log(`   🔗 Resolved to trading contract: ${tradingContractId?.slice(0, 10)}...`);
@@ -492,8 +497,10 @@ export async function handleMarketEventsRequest(req, res) {
             // Check if ticker already has rate provider (::)
             const tickerHasRateProvider = ticker.includes('::');
             if (rawSpotPrice !== null) {
-                // If ticker has ::, rate is already applied; otherwise multiply by currencyRate
-                spotPrice = tickerHasRateProvider ? rawSpotPrice : rawSpotPrice * currencyRate;
+                // GeckoTerminal returns price with rate baked in when :: is present
+                // (e.g., GNO in xDAI terms = ~118). Divide by currencyRate to get sDAI price (~96)
+                // Without ::, price is already in base terms, no adjustment needed
+                spotPrice = tickerHasRateProvider ? rawSpotPrice / currencyRate : rawSpotPrice;
             }
             console.log(`   💹 Spot price: $${spotPrice?.toFixed(4) || 'N/A'} (rate ${tickerHasRateProvider ? 'built-in' : 'applied'})`);
         } else {
@@ -501,7 +508,9 @@ export async function handleMarketEventsRequest(req, res) {
         }
 
         // Fetch pools from Algebra subgraph using trading contract address
-        const pools = await fetchPoolsForProposal(tradingContractId);
+        const pools = IS_CHECKPOINT
+            ? await fetchPoolsAdapter(tradingContractId, chainId)
+            : await fetchPoolsForProposal(tradingContractId);
         console.log(`   📦 Found ${pools.length} pools`);
 
         // Find YES and NO conditional pools
@@ -526,15 +535,15 @@ export async function handleMarketEventsRequest(req, res) {
         const response = {
             event_id: resolved.originalProposalId,  // Original case for links
             conditional_yes: {
-                price: yesPrice,
+                price_usd: yesPrice,
                 pool_id: yesPool?.id || ''  // Real pool ID from subgraph
             },
             conditional_no: {
-                price: noPrice,
+                price_usd: noPrice,
                 pool_id: noPool?.id || ''   // Real pool ID from subgraph
             },
             spot: {
-                price: spotPrice,
+                price_usd: spotPrice,
                 // ⭐ Include ticker so graphql-proxy can fetch spot candles
                 pool_ticker: ticker || null
             },
