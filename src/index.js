@@ -12,6 +12,7 @@ import express from 'express';
 import cors from 'cors';
 import { handleMarketEventsRequest } from './routes/market-events.js';
 import { handleGraphQLRequest } from './routes/graphql-proxy.js';
+import { handleUnifiedChartRequest } from './routes/unified-chart.js';
 import { fetchSpotCandles } from './services/spot-price.js';
 import { getRateCached } from './services/rate-provider.js';
 const app = express();
@@ -30,9 +31,14 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================
-// FUTARCHY API REPLACEMENT
+// ⚡ UNIFIED CHART ENDPOINT (v2) — single call for everything
+// Route: /api/v2/proposals/:proposalId/chart?minTimestamp=...&maxTimestamp=...
+// ============================================
+app.get('/api/v2/proposals/:proposalId/chart', handleUnifiedChartRequest);
+
+// ============================================
+// FUTARCHY API (v1 — legacy, kept for backward compatibility)
 // Route: /api/v1/market-events/proposals/:proposalId/prices
-// Replaces: stag.api.tickspread.com
 // ============================================
 app.get('/api/v1/market-events/proposals/:proposalId/prices', handleMarketEventsRequest);
 
