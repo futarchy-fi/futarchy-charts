@@ -21,8 +21,8 @@ const GRAPH_NODE = {
 };
 
 const CHECKPOINT = {
-    registry: 'http://localhost:3003/graphql', // Remote: https://api.futarchy.fi/registry/graphql
-    candles: 'http://localhost:3001/graphql',  // Remote: https://api.futarchy.fi/candles/graphql
+    registry: 'https://api.futarchy.fi/registry/graphql',
+    candles: 'https://api.futarchy.fi/candles/graphql',
 };
 
 export const ENDPOINTS = MODE === 'checkpoint' ? CHECKPOINT : GRAPH_NODE;

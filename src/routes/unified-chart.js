@@ -178,6 +178,7 @@ export async function handleUnifiedChartRequest(req, res) {
         const response = {
             market: {
                 event_id: resolved.originalProposalId,
+                trading_address: tradingContractId,
                 conditional_yes: { price_usd: yesPrice, pool_id: yesPool?.id || '' },
                 conditional_no: { price_usd: noPrice, pool_id: noPool?.id || '' },
                 spot: { price_usd: spotPrice, pool_ticker: ticker || null },

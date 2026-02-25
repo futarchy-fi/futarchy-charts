@@ -25,6 +25,7 @@ app.use(cors({
     exposedHeaders: ['X-Cache', 'X-Cache-TTL', 'X-Response-Time'],
 }));
 app.use(express.json());
+app.disable('etag'); // Prevent 304 — ensures browser always gets fresh response
 
 // Health check
 app.get('/health', (req, res) => {
