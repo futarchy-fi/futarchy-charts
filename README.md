@@ -68,7 +68,7 @@ Server runs on `http://localhost:3030`
 
 Set in your frontend `.env`:
 ```env
-VITE_FUTARCHY_API_URL=http://localhost:3030
+VITE_FUTARCHY_API_URL=http://localhost:3031
 ```
 
 ---

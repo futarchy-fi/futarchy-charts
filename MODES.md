@@ -30,7 +30,7 @@ FUTARCHY_MODE=graph_node npm start  # or checkpoint
 
 # Terminal 2: Start the UI pointing to local server
 cd apps/ui
-VITE_FUTARCHY_API_URL=http://localhost:3030 yarn dev
+VITE_FUTARCHY_API_URL=http://localhost:3031 yarn dev
 ```
 
 ## API Endpoints
