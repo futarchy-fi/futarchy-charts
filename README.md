@@ -158,6 +158,8 @@ The warmer keeps caches permanently warm — **zero cold starts after the first 
 **Eviction policy (when max entries is reached):**
 When the warm list is full (default: 50 entries), the **least recently accessed** entry gets evicted to make room for the new one. So a new proposal won't be ignored — it replaces the one nobody has looked at the longest. Active proposals always stay warm.
 
+> **Note:** The warmer **never warms spot data**. Spot prices come from GeckoTerminal, which is an external rate-limited API (HTTP 429 on too many requests). The warmer always refreshes with `includeSpot=false`. Spot data is only fetched on real user requests and cached for 30s — empty/error responses are never cached, so the next user request retries fresh.
+
 ### Monitor: `GET /warmer`
 
 ```json

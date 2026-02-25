@@ -119,7 +119,7 @@ export async function handleUnifiedChartRequest(req, res) {
             getRateCached(currencyRateProvider, chainId).then(r => { console.log(`      💱 Rate: ${r?.toFixed(4) || 'N/A'} (${Date.now() - tRate}ms)`); return r; }),
             yesPool ? (candlesCache.get(`yes:${yesPool.id}:${minTimestamp}:${maxTimestamp}`) || fetchCandles(yesPool.id, minTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`yes:${yesPool.id}:${minTimestamp}:${maxTimestamp}`, c); console.log(`      📈 YES candles: ${c.length} (${Date.now() - tYes}ms)`); return c; })) : Promise.resolve([]),
             noPool ? (candlesCache.get(`no:${noPool.id}:${minTimestamp}:${maxTimestamp}`) || fetchCandles(noPool.id, minTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`no:${noPool.id}:${minTimestamp}:${maxTimestamp}`, c); console.log(`      📉 NO candles: ${c.length} (${Date.now() - tNo}ms)`); return c; })) : Promise.resolve([]),
-            (includeSpot && ticker) ? (spotCache.get(ticker) || fetchSpotCandles(ticker, 500).then(s => { spotCache.set(ticker, s); console.log(`      💹 Spot: ${s?.candles?.length || 0} raw (${Date.now() - tSpot}ms)`); return s; })) : Promise.resolve(null),
+            (includeSpot && ticker) ? (spotCache.get(ticker) || fetchSpotCandles(ticker, 500).then(s => { if (s?.candles?.length > 0) spotCache.set(ticker, s); console.log(`      💹 Spot: ${s?.candles?.length || 0} raw (${Date.now() - tSpot}ms)`); return s; })) : Promise.resolve(null),
         ]);
 
         console.log(`   ⏱️ Parallel fetch total: ${Date.now() - t4}ms`);
@@ -212,7 +212,8 @@ export async function handleUnifiedChartRequest(req, res) {
         console.log(`   ✅ Done: YES=${yesCandles.length} NO=${noCandles.length} SPOT=${spotCandles.length} (${elapsed}ms)`);
         logCacheStats();
         responseCache.set(cacheKey, response);
-        registerForWarming(cacheKey, { proposalId, minTimestamp, maxTimestamp, includeSpot });
+        // Warmer always uses includeSpot=false — spot is external (GeckoTerminal) and rate-limited
+        registerForWarming(cacheKey, { proposalId, minTimestamp, maxTimestamp, includeSpot: false });
         res.set('X-Cache', 'MISS');
         res.set('X-Cache-TTL', String(RESPONSE_TTL_SEC));
         res.set('X-Response-Time', `${elapsed}ms`);
