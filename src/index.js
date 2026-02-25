@@ -12,9 +12,11 @@ import express from 'express';
 import cors from 'cors';
 import { handleMarketEventsRequest } from './routes/market-events.js';
 import { handleGraphQLRequest } from './routes/graphql-proxy.js';
-import { handleUnifiedChartRequest } from './routes/unified-chart.js';
+import { handleUnifiedChartRequest, refreshChart } from './routes/unified-chart.js';
 import { fetchSpotCandles } from './services/spot-price.js';
 import { getRateCached } from './services/rate-provider.js';
+import { startWarmer, getWarmerStatus } from './utils/warmer.js';
+import { ENABLE_WARMER } from './config/cache-config.js';
 const app = express();
 const PORT = 3031;
 // Middleware — allow all origins for local dev
@@ -30,6 +32,11 @@ app.disable('etag'); // Prevent 304 — ensures browser always gets fresh respon
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Warmer status
+app.get('/warmer', (req, res) => {
+    res.json(getWarmerStatus());
 });
 
 // ============================================
@@ -93,6 +100,7 @@ app.get('/api/v1/spot-candles', async (req, res) => {
 app.post('/subgraphs/name/algebra-proposal-candles-v1', handleGraphQLRequest);
 
 // Start server
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log('');
     console.log('🚀 Futarchy Local Server Running');
@@ -100,11 +108,20 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`   Port: ${PORT}`);
     console.log('');
     console.log('📍 Endpoints:');
+    console.log(`   GET  http://localhost:${PORT}/api/v2/proposals/:id/chart`);
     console.log(`   GET  http://localhost:${PORT}/api/v1/market-events/proposals/:id/prices`);
-    console.log(`   POST http://localhost:${PORT}/subgraphs/name/algebra-proposal-candles-v1`);
+    console.log(`   GET  http://localhost:${PORT}/warmer  (status)`);
     console.log('');
     console.log('🔧 To use in frontend, change URLs to:');
     console.log(`   VITE_FUTARCHY_API_URL=http://localhost:${PORT}`);
-    console.log(`   Candles: http://localhost:${PORT}/subgraphs/name/algebra-proposal-candles-v1`);
     console.log('─'.repeat(50));
+
+    // Start background warmer
+    if (ENABLE_WARMER) {
+        startWarmer(async (params) => {
+            await refreshChart(params);
+        });
+    } else {
+        console.log('🔥 [Warmer] Disabled (ENABLE_WARMER=false)');
+    }
 });

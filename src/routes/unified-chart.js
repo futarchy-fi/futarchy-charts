@@ -18,6 +18,8 @@ import { fetchPoolsForProposal } from '../services/algebra-client.js';
 import { getRateCached } from '../services/rate-provider.js';
 import { getSpotPrice, fetchSpotCandles } from '../services/spot-price.js';
 import { responseCache, candlesCache, spotCache, logCacheStats } from '../utils/cache.js';
+import { registerForWarming } from '../utils/warmer.js';
+import { RESPONSE_TTL_SEC } from '../config/cache-config.js';
 
 // ============================================================================
 // REGISTRY HELPERS (only for non-Checkpoint fallback)
@@ -60,8 +62,7 @@ export async function handleUnifiedChartRequest(req, res) {
     const maxTimestamp = parseInt(req.query.maxTimestamp) || Math.floor(Date.now() / 1000);
     const includeSpot = req.query.includeSpot !== 'false'; // default true
 
-    // ── Response-level cache (15s TTL) ──
-    const RESPONSE_TTL_SEC = 15;
+    // ── Response-level cache ──
     const cacheKey = `${proposalId}:${minTimestamp}:${maxTimestamp}:${includeSpot}`;
     const cachedResponse = responseCache.get(cacheKey);
     if (cachedResponse) {
@@ -211,6 +212,7 @@ export async function handleUnifiedChartRequest(req, res) {
         console.log(`   ✅ Done: YES=${yesCandles.length} NO=${noCandles.length} SPOT=${spotCandles.length} (${elapsed}ms)`);
         logCacheStats();
         responseCache.set(cacheKey, response);
+        registerForWarming(cacheKey, { proposalId, minTimestamp, maxTimestamp, includeSpot });
         res.set('X-Cache', 'MISS');
         res.set('X-Cache-TTL', String(RESPONSE_TTL_SEC));
         res.set('X-Response-Time', `${elapsed}ms`);
@@ -220,4 +222,25 @@ export async function handleUnifiedChartRequest(req, res) {
         console.error(`   ❌ Error: ${error.message}`);
         res.status(500).json({ error: error.message });
     }
+}
+
+/**
+ * Internal refresh function for the cache warmer.
+ * Calls the handler with mock req/res to rebuild all caches.
+ */
+export async function refreshChart({ proposalId, minTimestamp, maxTimestamp, includeSpot }) {
+    const mockReq = {
+        params: { proposalId },
+        query: {
+            minTimestamp: String(minTimestamp),
+            maxTimestamp: String(maxTimestamp),
+            includeSpot: includeSpot ? 'true' : 'false',
+        },
+    };
+    const mockRes = {
+        json: () => { },
+        set: () => { },
+        status: () => ({ json: () => { } }),
+    };
+    await handleUnifiedChartRequest(mockReq, mockRes);
 }
