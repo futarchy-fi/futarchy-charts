@@ -57,13 +57,14 @@ export async function handleUnifiedChartRequest(req, res) {
     const { proposalId } = req.params;
     const minTimestamp = parseInt(req.query.minTimestamp) || 0;
     const maxTimestamp = parseInt(req.query.maxTimestamp) || Math.floor(Date.now() / 1000);
+    const includeSpot = req.query.includeSpot !== 'false'; // default true
 
-    console.log(`⚡ [Unified Chart] ${proposalId.slice(0, 10)}... (${minTimestamp}→${maxTimestamp})`);
+    console.log(`⚡ [Unified Chart] ${proposalId.slice(0, 10)}... (${minTimestamp}→${maxTimestamp}) spot=${includeSpot}`);
     const t0 = Date.now();
 
     try {
         // ── Step 1: Resolve proposal using EXISTING adapter ──
-        // This is the same function market-events.js uses
+        const t1 = Date.now();
         const resolved = await resolveProposalAdapter(proposalId);
         const tradingContractId = resolved.proposalAddress || resolved.proposalId;
         const ticker = resolved.coingeckoTicker || null;
@@ -71,9 +72,10 @@ export async function handleUnifiedChartRequest(req, res) {
         const closeTimestamp = resolved.closeTimestamp || null;
         const chainId = resolved.chain || 100;
 
-        console.log(`   🔗 Resolved: ${tradingContractId?.slice(0, 10)}... chain=${chainId} ticker=${ticker?.slice(0, 20) || 'none'}`);
+        console.log(`   🔗 Resolved: ${tradingContractId?.slice(0, 10)}... chain=${chainId} ticker=${ticker?.slice(0, 20) || 'none'} (${Date.now() - t1}ms)`);
 
         // ── Step 2: Fetch pools ──
+        const t2 = Date.now();
         const pools = IS_CHECKPOINT
             ? await fetchPoolsAdapter(tradingContractId, chainId)
             : await fetchPoolsForProposal(tradingContractId);
@@ -81,20 +83,31 @@ export async function handleUnifiedChartRequest(req, res) {
         const yesPool = pools.find(p => p.outcomeSide === 'YES' && p.type === 'CONDITIONAL');
         const noPool = pools.find(p => p.outcomeSide === 'NO' && p.type === 'CONDITIONAL');
 
-        console.log(`   📦 Pools: YES=${!!yesPool} NO=${!!noPool}`);
+        console.log(`   📦 Pools: YES=${!!yesPool} NO=${!!noPool} (${Date.now() - t2}ms)`);
 
         // ── Step 3: Org-level metadata (fallback when not on proposal) ──
+        const t3 = Date.now();
         const pricePrecision = resolved.pricePrecision ?? await lookupOrgMetadataField(resolved.organizationId, 'price_precision');
         const currencyRateProvider = resolved.currencyStableRate ?? await lookupOrgMetadataField(resolved.organizationId, 'currency_stable_rate');
         const currencyStableSymbol = resolved.currencyStableSymbol ?? await lookupOrgMetadataField(resolved.organizationId, 'currency_stable_symbol');
 
-        // ── Step 4: Fetch ALL remaining data in PARALLEL ──
+        console.log(`   📋 Org metadata fallbacks (${Date.now() - t3}ms)`);
+
+        // ── Step 4: Fetch data in PARALLEL (spot only if includeSpot) ──
+        const t4 = Date.now();
+        const tRate = Date.now();
+        const tYes = Date.now();
+        const tNo = Date.now();
+        const tSpot = Date.now();
+
         const [currencyRate, yesCandles, noCandles, spotData] = await Promise.all([
-            getRateCached(currencyRateProvider, chainId),
-            yesPool ? fetchCandles(yesPool.id, minTimestamp, maxTimestamp, chainId) : Promise.resolve([]),
-            noPool ? fetchCandles(noPool.id, minTimestamp, maxTimestamp, chainId) : Promise.resolve([]),
-            ticker ? fetchSpotCandles(ticker, 500) : Promise.resolve(null),
+            getRateCached(currencyRateProvider, chainId).then(r => { console.log(`      💱 Rate: ${r?.toFixed(4) || 'N/A'} (${Date.now() - tRate}ms)`); return r; }),
+            yesPool ? fetchCandles(yesPool.id, minTimestamp, maxTimestamp, chainId).then(c => { console.log(`      📈 YES candles: ${c.length} (${Date.now() - tYes}ms)`); return c; }) : Promise.resolve([]),
+            noPool ? fetchCandles(noPool.id, minTimestamp, maxTimestamp, chainId).then(c => { console.log(`      📉 NO candles: ${c.length} (${Date.now() - tNo}ms)`); return c; }) : Promise.resolve([]),
+            (includeSpot && ticker) ? fetchSpotCandles(ticker, 500).then(s => { console.log(`      💹 Spot: ${s?.candles?.length || 0} raw (${Date.now() - tSpot}ms)`); return s; }) : Promise.resolve(null),
         ]);
+
+        console.log(`   ⏱️ Parallel fetch total: ${Date.now() - t4}ms`);
 
         // ── Step 5: Process spot candles (filter + rate-divide) ──
         let spotCandles = [];

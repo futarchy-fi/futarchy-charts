@@ -17,12 +17,12 @@ if (!['graph_node', 'checkpoint'].includes(MODE)) {
 
 const GRAPH_NODE = {
     registry: 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/futarchy-complete-new-v3',
-    candles:  'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/algebra-proposal-candles-v1',
+    candles: 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/algebra-proposal-candles-v1',
 };
 
 const CHECKPOINT = {
     registry: 'https://api.futarchy.fi/registry/graphql',
-    candles:  'https://api.futarchy.fi/candles/graphql',
+    candles: 'https://api.futarchy.fi/candles/graphql',
 };
 
 export const ENDPOINTS = MODE === 'checkpoint' ? CHECKPOINT : GRAPH_NODE;
