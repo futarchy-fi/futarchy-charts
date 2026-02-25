@@ -121,6 +121,84 @@ const CHECKPOINT = {
 
 ---
 
+## 🔥 Caching & Background Warmer
+
+### Tiered Cache
+
+All responses are cached in-memory with different TTLs per data type:
+
+| Layer | Default TTL | Why |
+|-------|-------------|-----|
+| **Response** | 30s | Full endpoint response — identical params = instant |
+| **Registry** | 5 min | Proposal metadata, org lookups — rarely changes |
+| **Candles** | 30s | YES/NO price history — new candle every ~1 hour |
+| **Spot** | 30s | GeckoTerminal external API |
+| **Rate** | 5 min | On-chain rate provider |
+
+### Response Headers
+
+Every response includes cache headers so clients know what they got:
+
+```
+X-Cache: HIT           ← or MISS
+X-Cache-TTL: 30        ← max age in seconds
+X-Response-Time: 0ms   ← server processing time
+```
+
+### Demand-Driven Warmer
+
+The warmer keeps caches permanently warm — **zero cold starts after the first request**.
+
+**How it works:**
+1. User hits an endpoint → succeeds → gets registered in the warm list
+2. Background loop auto-refreshes the entry **before** the cache expires
+3. Entry stays in the warm list for **7 days** (configurable)
+4. Every subsequent user request → instant cache HIT
+
+**Eviction policy (when max entries is reached):**
+When the warm list is full (default: 50 entries), the **least recently accessed** entry gets evicted to make room for the new one. So a new proposal won't be ignored — it replaces the one nobody has looked at the longest. Active proposals always stay warm.
+
+### Monitor: `GET /warmer`
+
+```json
+{
+  "active": 3,
+  "maxEntries": 50,
+  "refreshIntervalSec": 27,
+  "retentionDays": 7,
+  "entries": [
+    { "proposalId": "0x09cb4335...", "lastSeen": "2026-02-25T23:40:48Z", "age": "2h" }
+  ]
+}
+```
+
+### Environment Variables
+
+All cache and warmer settings live in `src/config/cache-config.js` and are overridable via env vars:
+
+```bash
+# Cache TTLs (seconds)
+CACHE_RESPONSE_TTL=30      # response cache
+CACHE_REGISTRY_TTL=300     # registry (5 min)
+CACHE_CANDLES_TTL=30       # YES/NO candles
+CACHE_SPOT_TTL=30          # spot candles
+
+# Warmer
+ENABLE_WARMER=true         # set to "false" to disable
+WARMER_RETENTION_DAYS=7    # how long entries stay warm
+WARMER_MAX_ENTRIES=50      # max concurrent warm entries
+```
+
+The warmer refresh interval **auto-derives** from the response TTL: `RESPONSE_TTL - 3s`. So 30s TTL = refresh every 27s = **~2 refreshes/min/entry**.
+
+### Disable Warmer
+
+```bash
+ENABLE_WARMER=false npm start
+```
+
+---
+
 ## API Endpoints (Express)
 
 ### 1. Market Prices
