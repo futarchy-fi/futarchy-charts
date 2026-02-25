@@ -62,7 +62,7 @@ npm install
 npm start
 ```
 
-Server runs on `http://localhost:3030`
+Server runs on `http://localhost:3031`
 
 ### Frontend Config
 
@@ -70,6 +70,54 @@ Set in your frontend `.env`:
 ```env
 VITE_FUTARCHY_API_URL=http://localhost:3031
 ```
+
+---
+
+## ⚡ Local Checkpoint Mode (Recommended)
+
+By default, `futarchy-charts` connects to **local Checkpoint indexers** for maximum speed. If you're running the Checkpoint indexers from [`futarchy-fi/futarchy-subgraphs`](https://github.com/futarchy-fi/futarchy-subgraphs) on the same machine, queries go directly to `localhost` — no DNS, no TLS, no API Gateway overhead.
+
+### Performance Comparison
+
+| Setup | Response Time |
+|-------|--------------|
+| Remote (`api.futarchy.fi`) | ~3500ms |
+| **Local (`localhost`)** | **~800ms** ⚡ |
+
+### Local Setup
+
+1. Clone and run the Checkpoint indexers from [`futarchy-fi/futarchy-subgraphs`](https://github.com/futarchy-fi/futarchy-subgraphs):
+
+```bash
+# Registry indexer (port 3003)
+# Docker container: futarchy-registry-checkpoint → localhost:3003
+
+# Candles indexer (port 3001)  
+# Docker container: checkpoint-checkpoint-1 → localhost:3001
+```
+
+2. Run futarchy-charts in checkpoint mode:
+
+```bash
+FUTARCHY_MODE=checkpoint npm start
+```
+
+The server will connect to:
+- **Registry:** `http://localhost:3003/graphql`
+- **Candles:** `http://localhost:3001/graphql`
+
+### Using Remote API Instead
+
+If you don't have the indexers running locally, edit `src/config/endpoints.js` and swap the `CHECKPOINT` URLs to the remote endpoints:
+
+```javascript
+const CHECKPOINT = {
+    registry: 'https://api.futarchy.fi/registry/graphql',
+    candles:  'https://api.futarchy.fi/candles/graphql',
+};
+```
+
+> **Note:** Remote endpoints require the `X-Futarchy-Secret` header for authenticated access.
 
 ---
 

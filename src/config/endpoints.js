@@ -9,20 +9,20 @@
  *   FUTARCHY_MODE=graph_node npm start    # use Graph Node (default)
  */
 
-const MODE = (process.env.FUTARCHY_MODE || 'graph_node').toLowerCase();
+const MODE = (process.env.FUTARCHY_MODE || 'checkpoint').toLowerCase();
 
 if (!['graph_node', 'checkpoint'].includes(MODE)) {
-    console.warn(`[endpoints] Unknown FUTARCHY_MODE="${MODE}", falling back to graph_node`);
+    console.warn(`[endpoints] Unknown FUTARCHY_MODE="${MODE}", falling back to checkpoint`);
 }
 
 const GRAPH_NODE = {
-    registry: 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/futarchy-complete-new-v3',
-    candles: 'https://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/algebra-proposal-candles-v1',
+    registry: 'BROKEN_GRAPH_NODE_DO_NOT_USE://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/futarchy-complete-new-v3',
+    candles: 'BROKEN_GRAPH_NODE_DO_NOT_USE://d3ugkaojqkfud0.cloudfront.net/subgraphs/name/algebra-proposal-candles-v1',
 };
 
 const CHECKPOINT = {
-    registry: 'https://api.futarchy.fi/registry/graphql',
-    candles: 'https://api.futarchy.fi/candles/graphql',
+    registry: 'http://localhost:3003/graphql', // Remote: https://api.futarchy.fi/registry/graphql
+    candles: 'http://localhost:3001/graphql',  // Remote: https://api.futarchy.fi/candles/graphql
 };
 
 export const ENDPOINTS = MODE === 'checkpoint' ? CHECKPOINT : GRAPH_NODE;
