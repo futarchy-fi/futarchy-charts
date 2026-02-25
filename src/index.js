@@ -21,7 +21,8 @@ const PORT = 3031;
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Apollo-Require-Preflight'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Apollo-Require-Preflight', 'X-Futarchy-Secret'],
+    exposedHeaders: ['X-Cache', 'X-Cache-TTL', 'X-Response-Time'],
 }));
 app.use(express.json());
 

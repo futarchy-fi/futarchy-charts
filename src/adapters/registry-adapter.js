@@ -18,6 +18,7 @@
  */
 
 import { ENDPOINTS, IS_CHECKPOINT } from '../config/endpoints.js';
+import { registryCache } from '../utils/cache.js';
 
 const AGGREGATOR_ADDRESS = '0xc5eb43d53e2fe5fdde5faf400cc4167e5b5d4fc1';
 
@@ -277,24 +278,39 @@ function normalizeProposalResult(proposal, config) {
 export async function resolveProposalId(proposalId) {
     const normalized = proposalId.toLowerCase();
 
+    // Check cache first (5 min TTL)
+    const cached = registryCache.get(normalized);
+    if (cached) {
+        console.log(`   ⚡ Registry cache hit: ${normalized.slice(0, 10)}...`);
+        return cached;
+    }
+
     // 1. Try snapshot_id lookup
     const lookupFn = IS_CHECKPOINT ? checkpoint_lookupBySnapshotId : graphNode_lookupBySnapshotId;
     const snapshotResult = await lookupFn(normalized);
-    if (snapshotResult) return snapshotResult;
+    if (snapshotResult) {
+        registryCache.set(normalized, snapshotResult);
+        return snapshotResult;
+    }
 
     // 2. Fall back to org metadata lookup
     const orgLookupFn = IS_CHECKPOINT ? checkpoint_lookupInOrgMetadata : graphNode_lookupInOrgMetadata;
     const orgResult = await orgLookupFn(normalized);
-    if (orgResult) return orgResult;
+    if (orgResult) {
+        registryCache.set(normalized, orgResult);
+        return orgResult;
+    }
 
     // 3. Use ID directly
-    return {
+    const fallback = {
         proposalId: normalized,
         proposalAddress: normalized,
         originalProposalId: proposalId,
         organizationId: null,
         organizationName: null,
     };
+    registryCache.set(normalized, fallback);
+    return fallback;
 }
 
 /**

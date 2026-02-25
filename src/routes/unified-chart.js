@@ -17,6 +17,7 @@ import { IS_CHECKPOINT, ENDPOINTS } from '../config/endpoints.js';
 import { fetchPoolsForProposal } from '../services/algebra-client.js';
 import { getRateCached } from '../services/rate-provider.js';
 import { getSpotPrice, fetchSpotCandles } from '../services/spot-price.js';
+import { responseCache, candlesCache, spotCache, logCacheStats } from '../utils/cache.js';
 
 // ============================================================================
 // REGISTRY HELPERS (only for non-Checkpoint fallback)
@@ -58,6 +59,19 @@ export async function handleUnifiedChartRequest(req, res) {
     const minTimestamp = parseInt(req.query.minTimestamp) || 0;
     const maxTimestamp = parseInt(req.query.maxTimestamp) || Math.floor(Date.now() / 1000);
     const includeSpot = req.query.includeSpot !== 'false'; // default true
+
+    // ── Response-level cache (15s TTL) ──
+    const RESPONSE_TTL_SEC = 15;
+    const cacheKey = `${proposalId}:${minTimestamp}:${maxTimestamp}:${includeSpot}`;
+    const cachedResponse = responseCache.get(cacheKey);
+    if (cachedResponse) {
+        console.log(`⚡ [Unified Chart] CACHE HIT ${proposalId.slice(0, 10)}... (0ms)`);
+        logCacheStats();
+        res.set('X-Cache', 'HIT');
+        res.set('X-Cache-TTL', String(RESPONSE_TTL_SEC));
+        res.set('X-Response-Time', '0ms');
+        return res.json(cachedResponse);
+    }
 
     console.log(`⚡ [Unified Chart] ${proposalId.slice(0, 10)}... (${minTimestamp}→${maxTimestamp}) spot=${includeSpot}`);
     const t0 = Date.now();
@@ -102,9 +116,9 @@ export async function handleUnifiedChartRequest(req, res) {
 
         const [currencyRate, yesCandles, noCandles, spotData] = await Promise.all([
             getRateCached(currencyRateProvider, chainId).then(r => { console.log(`      💱 Rate: ${r?.toFixed(4) || 'N/A'} (${Date.now() - tRate}ms)`); return r; }),
-            yesPool ? fetchCandles(yesPool.id, minTimestamp, maxTimestamp, chainId).then(c => { console.log(`      📈 YES candles: ${c.length} (${Date.now() - tYes}ms)`); return c; }) : Promise.resolve([]),
-            noPool ? fetchCandles(noPool.id, minTimestamp, maxTimestamp, chainId).then(c => { console.log(`      📉 NO candles: ${c.length} (${Date.now() - tNo}ms)`); return c; }) : Promise.resolve([]),
-            (includeSpot && ticker) ? fetchSpotCandles(ticker, 500).then(s => { console.log(`      💹 Spot: ${s?.candles?.length || 0} raw (${Date.now() - tSpot}ms)`); return s; }) : Promise.resolve(null),
+            yesPool ? (candlesCache.get(`yes:${yesPool.id}:${minTimestamp}:${maxTimestamp}`) || fetchCandles(yesPool.id, minTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`yes:${yesPool.id}:${minTimestamp}:${maxTimestamp}`, c); console.log(`      📈 YES candles: ${c.length} (${Date.now() - tYes}ms)`); return c; })) : Promise.resolve([]),
+            noPool ? (candlesCache.get(`no:${noPool.id}:${minTimestamp}:${maxTimestamp}`) || fetchCandles(noPool.id, minTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`no:${noPool.id}:${minTimestamp}:${maxTimestamp}`, c); console.log(`      📉 NO candles: ${c.length} (${Date.now() - tNo}ms)`); return c; })) : Promise.resolve([]),
+            (includeSpot && ticker) ? (spotCache.get(ticker) || fetchSpotCandles(ticker, 500).then(s => { spotCache.set(ticker, s); console.log(`      💹 Spot: ${s?.candles?.length || 0} raw (${Date.now() - tSpot}ms)`); return s; })) : Promise.resolve(null),
         ]);
 
         console.log(`   ⏱️ Parallel fetch total: ${Date.now() - t4}ms`);
@@ -194,6 +208,11 @@ export async function handleUnifiedChartRequest(req, res) {
 
         const elapsed = Date.now() - t0;
         console.log(`   ✅ Done: YES=${yesCandles.length} NO=${noCandles.length} SPOT=${spotCandles.length} (${elapsed}ms)`);
+        logCacheStats();
+        responseCache.set(cacheKey, response);
+        res.set('X-Cache', 'MISS');
+        res.set('X-Cache-TTL', String(RESPONSE_TTL_SEC));
+        res.set('X-Response-Time', `${elapsed}ms`);
         res.json(response);
 
     } catch (error) {
