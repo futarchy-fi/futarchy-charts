@@ -570,6 +570,7 @@ export async function handleMarketEventsRequest(req, res) {
             timeline: {
                 start: timelineStart,
                 end: timelineEnd,
+                chain_id: chainId,  // Chain ID for pool ID prefixing (100=Gnosis, 1=Mainnet)
                 chart_start_range: chartStartRange || null,
                 close_timestamp: closeTimestamp || null,  // NEW: explicit close timestamp
                 price_precision: pricePrecision,

@@ -12,10 +12,10 @@ import express from 'express';
 import cors from 'cors';
 import { handleMarketEventsRequest } from './routes/market-events.js';
 import { handleGraphQLRequest } from './routes/graphql-proxy.js';
-
+import { fetchSpotCandles } from './services/spot-price.js';
+import { getRateCached } from './services/rate-provider.js';
 const app = express();
-const PORT = 3030;
-
+const PORT = 3031;
 // Middleware — allow all origins for local dev
 app.use(cors({
     origin: '*',
@@ -35,6 +35,47 @@ app.get('/health', (req, res) => {
 // Replaces: stag.api.tickspread.com
 // ============================================
 app.get('/api/v1/market-events/proposals/:proposalId/prices', handleMarketEventsRequest);
+
+// ============================================
+// SPOT CANDLES (GeckoTerminal → rate-divided)
+// Route: /api/v1/spot-candles?ticker=...&minTimestamp=...&maxTimestamp=...
+// ============================================
+
+app.get('/api/v1/spot-candles', async (req, res) => {
+    const { ticker, minTimestamp, maxTimestamp } = req.query;
+    if (!ticker) return res.status(400).json({ error: 'ticker required' });
+
+    const min = parseInt(minTimestamp) || 0;
+    const max = parseInt(maxTimestamp) || Math.floor(Date.now() / 1000);
+
+    try {
+        const spotData = await fetchSpotCandles(ticker, 500);
+
+        // Compute rate divisor when ticker has :: rate provider
+        let rateDivisor = 1;
+        if (ticker.includes('::')) {
+            const rateProviderAddress = ticker.split('::')[1]?.split('-')[0];
+            const networkPart = ticker.split('-').pop() || 'xdai';
+            const chainId = networkPart === 'xdai' ? 100 : 1;
+            if (rateProviderAddress) {
+                rateDivisor = await getRateCached(rateProviderAddress, chainId);
+            }
+        }
+
+        const candles = (spotData?.candles || [])
+            .filter(c => c.time >= min && c.time <= max)
+            .map(c => ({
+                periodStartUnix: String(c.time),
+                close: String(c.value / rateDivisor)
+            }));
+
+        console.log(`📊 [Spot Candles] ticker=${ticker.slice(0, 20)}... → ${candles.length} candles (rate: ${rateDivisor.toFixed(4)})`);
+        res.json({ spotCandles: candles });
+    } catch (error) {
+        console.error('❌ Spot candles error:', error.message);
+        res.status(500).json({ error: error.message, spotCandles: [] });
+    }
+});
 
 // ============================================
 // ALGEBRA CANDLES GRAPHQL PROXY

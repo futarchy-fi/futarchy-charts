@@ -322,7 +322,7 @@ export async function proxyCandlesQuery(query, variables = {}, chainId = 100) {
     // Checkpoint mode: adapt variables (prefix pool IDs) and query fields
     const adaptedVars = { ...variables };
 
-    // Prefix pool IDs in variables
+    // Prefix pool IDs in variables (when UI uses $yesPoolId/$noPoolId)
     if (adaptedVars.yesPoolId) {
         adaptedVars.yesPoolId = addChainPrefix(adaptedVars.yesPoolId, chainId);
     }
@@ -337,6 +337,14 @@ export async function proxyCandlesQuery(query, variables = {}, chainId = 100) {
         .replace(/periodStartUnix/g, 'time')
         .replace(/period:\s*"3600"/g, 'period: 3600')
         .replace(/orderBy:\s*periodStartUnix/g, 'orderBy: time');
+
+    // Also prefix inline pool IDs in the query string (pool: "0xabc..." → pool: "100-0xabc...")
+    adaptedQuery = adaptedQuery.replace(
+        /pool:\s*"(0x[a-fA-F0-9]{40})"/g,
+        (match, addr) => `pool: "${addChainPrefix(addr, chainId)}"`
+    );
+
+    console.log(`   [PROXY] Adapted query pool refs for chain ${chainId}`);
 
     const rawData = await gqlFetch(ENDPOINTS.candles, adaptedQuery, adaptedVars);
 
