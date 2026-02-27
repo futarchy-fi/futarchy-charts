@@ -61,9 +61,10 @@ export async function handleUnifiedChartRequest(req, res) {
     const minTimestamp = parseInt(req.query.minTimestamp) || 0;
     const maxTimestamp = parseInt(req.query.maxTimestamp) || Math.floor(Date.now() / 1000);
     const includeSpot = req.query.includeSpot !== 'false'; // default true
+    const applyCurrencyRate = req.query.applyCurrencyRate === 'true'; // default false
 
     // ── Response-level cache ──
-    const cacheKey = `${proposalId}:${minTimestamp}:${maxTimestamp}:${includeSpot}`;
+    const cacheKey = `${proposalId}:${minTimestamp}:${maxTimestamp}:${includeSpot}:${applyCurrencyRate}`;
     const cachedResponse = responseCache.get(cacheKey);
     if (cachedResponse) {
         console.log(`⚡ [Unified Chart] CACHE HIT ${proposalId.slice(0, 10)}... (0ms)`);
@@ -176,6 +177,22 @@ export async function handleUnifiedChartRequest(req, res) {
 
         // ── Build unified response ──
         const now = Math.floor(Date.now() / 1000);
+
+        // ── Apply currency rate to candles if requested ──
+        const rate = currencyRate || 1;
+        const shouldApplyRate = applyCurrencyRate && rate !== 1;
+
+        function applyRateToCandles(candles) {
+            if (!shouldApplyRate) return candles;
+            return candles.map(c => ({
+                ...c,
+                open: c.open ? String(parseFloat(c.open) * rate) : c.open,
+                high: c.high ? String(parseFloat(c.high) * rate) : c.high,
+                low: c.low ? String(parseFloat(c.low) * rate) : c.low,
+                close: c.close ? String(parseFloat(c.close) * rate) : c.close,
+            }));
+        }
+
         const response = {
             market: {
                 event_id: resolved.originalProposalId,
@@ -194,7 +211,8 @@ export async function handleUnifiedChartRequest(req, res) {
                     chart_start_range: chartStartRange || null,
                     close_timestamp: closeTimestamp || null,
                     price_precision: pricePrecision ? parseInt(pricePrecision) : null,
-                    currency_rate: currencyRateProvider ? currencyRate : null
+                    currency_rate: currencyRateProvider ? currencyRate : null,
+                    currency_rate_applied: shouldApplyRate
                 },
                 volume: {
                     conditional_yes: extractVolume(yesPool),
@@ -202,8 +220,8 @@ export async function handleUnifiedChartRequest(req, res) {
                 }
             },
             candles: {
-                yes: yesCandles,
-                no: noCandles,
+                yes: applyRateToCandles(yesCandles),
+                no: applyRateToCandles(noCandles),
                 spot: spotCandles
             }
         };
