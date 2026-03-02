@@ -15,6 +15,7 @@ import { handleGraphQLRequest } from './routes/graphql-proxy.js';
 import { handleUnifiedChartRequest, refreshChart } from './routes/unified-chart.js';
 import { fetchSpotCandles } from './services/spot-price.js';
 import { getRateCached } from './services/rate-provider.js';
+import { spotCache, logCacheStats } from './utils/cache.js';
 import { startWarmer, getWarmerStatus } from './utils/warmer.js';
 import { ENABLE_WARMER } from './config/cache-config.js';
 const app = express();
@@ -64,7 +65,12 @@ app.get('/api/v1/spot-candles', async (req, res) => {
     const max = parseInt(maxTimestamp) || Math.floor(Date.now() / 1000);
 
     try {
-        const spotData = await fetchSpotCandles(ticker, 500, max + 3600);
+        // Use spot cache to avoid hammering GeckoTerminal
+        let spotData = spotCache.get(ticker);
+        if (!spotData) {
+            spotData = await fetchSpotCandles(ticker, 500, max + 3600);
+            if (spotData?.candles?.length > 0) spotCache.set(ticker, spotData);
+        }
 
         // Compute rate divisor when ticker has :: rate provider
         let rateDivisor = 1;
@@ -85,6 +91,7 @@ app.get('/api/v1/spot-candles', async (req, res) => {
             }));
 
         console.log(`📊 [Spot Candles] ticker=${ticker.slice(0, 20)}... → ${candles.length} candles (rate: ${rateDivisor.toFixed(4)})`);
+        logCacheStats();
         res.json({ spotCandles: candles });
     } catch (error) {
         console.error('❌ Spot candles error:', error.message);

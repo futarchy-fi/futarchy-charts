@@ -34,7 +34,15 @@
 // CONFIG - Easy to modify
 // ==============================================================
 
-const GECKO_API = 'https://api.geckoterminal.com/api/v2';
+// CoinGecko Pro onchain API (250 req/min with paid key)
+// Free GeckoTerminal (api.geckoterminal.com) ignores the Pro key — must use pro-api.coingecko.com
+const GECKO_API_KEY = process.env.COINGECKO_API_KEY || 'CG-w7VderVSi3qPe5Ppcvgowmsu';
+const GECKO_API = GECKO_API_KEY
+    ? 'https://pro-api.coingecko.com/api/v3/onchain'
+    : 'https://api.geckoterminal.com/api/v2';
+const GECKO_HEADERS = GECKO_API_KEY
+    ? { accept: 'application/json', 'x-cg-pro-api-key': GECKO_API_KEY }
+    : { accept: 'application/json' };
 
 // ⭐ DEFAULT SPOT CONFIG - Change this to set the default token pair
 // Using multi-hop: PNK → WETH → sDAI (with inverted sDAI/WETH hop)
@@ -154,7 +162,7 @@ async function searchPool(network, base, quote) {
 
     console.log('[spotPrice] Searching:', url);
 
-    const res = await fetch(url, { headers: { accept: 'application/json' } });
+    const res = await fetch(url, { headers: GECKO_HEADERS });
     if (!res.ok) throw new Error(`Search failed: ${res.status}`);
 
     const data = await res.json();
@@ -189,7 +197,7 @@ async function fetchCandlesFromGecko(poolAddress, network, interval, limit, befo
 
     console.log('[spotPrice] Fetching candles:', url);
 
-    const res = await fetch(url, { headers: { accept: 'application/json' } });
+    const res = await fetch(url, { headers: GECKO_HEADERS });
     if (!res.ok) throw new Error(`Candles failed: ${res.status}`);
 
     const data = await res.json();

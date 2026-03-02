@@ -231,8 +231,8 @@ export async function handleUnifiedChartRequest(req, res) {
         console.log(`   ✅ Done: YES=${yesCandles.length} NO=${noCandles.length} SPOT=${spotCandles.length} (${elapsed}ms)`);
         logCacheStats();
         responseCache.set(cacheKey, response);
-        // Warmer always uses includeSpot=false — spot is external (GeckoTerminal) and rate-limited
-        registerForWarming(cacheKey, { proposalId, minTimestamp, maxTimestamp, includeSpot: false });
+        // With CoinGecko Pro API key (250 req/min), warmer can include spot data
+        registerForWarming(cacheKey, { proposalId, minTimestamp, maxTimestamp, includeSpot: true });
         res.set('X-Cache', 'MISS');
         res.set('X-Cache-TTL', String(RESPONSE_TTL_SEC));
         res.set('X-Response-Time', `${elapsed}ms`);

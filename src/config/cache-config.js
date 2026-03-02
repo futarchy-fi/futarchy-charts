@@ -15,12 +15,12 @@
  */
 
 // ── Response cache (full endpoint response) ──
-export const RESPONSE_TTL_SEC = parseInt(process.env.CACHE_RESPONSE_TTL || '30');
+export const RESPONSE_TTL_SEC = parseInt(process.env.CACHE_RESPONSE_TTL || '13');  // warmer fires at 13-3=10s
 
 // ── Data-layer caches ──
 export const REGISTRY_TTL_SEC = parseInt(process.env.CACHE_REGISTRY_TTL || '300'); // 5 min
 export const CANDLES_TTL_SEC = parseInt(process.env.CACHE_CANDLES_TTL || '30');
-export const SPOT_TTL_SEC = parseInt(process.env.CACHE_SPOT_TTL || '30');
+export const SPOT_TTL_SEC = parseInt(process.env.CACHE_SPOT_TTL || '10');  // 10s — warmer keeps fresh
 
 // ── Warmer ──
 export const ENABLE_WARMER = (process.env.ENABLE_WARMER || 'true').toLowerCase() !== 'false';
