@@ -178,11 +178,14 @@ async function searchPool(network, base, quote) {
 /**
  * Fetch OHLCV candles from GeckoTerminal
  */
-async function fetchCandlesFromGecko(poolAddress, network, interval, limit) {
+async function fetchCandlesFromGecko(poolAddress, network, interval, limit, beforeTimestamp = null) {
     const geckoNetwork = NETWORK_MAP[network]?.gecko || network;
     const timeframe = interval.includes('hour') ? 'hour' : interval.includes('min') ? 'minute' : 'day';
     // currency=token gives price in quote token, not USD
-    const url = `${GECKO_API}/networks/${geckoNetwork}/pools/${poolAddress}/ohlcv/${timeframe}?aggregate=1&limit=${limit}&currency=token`;
+    let url = `${GECKO_API}/networks/${geckoNetwork}/pools/${poolAddress}/ohlcv/${timeframe}?aggregate=1&limit=${limit}&currency=token`;
+    if (beforeTimestamp) {
+        url += `&before_timestamp=${beforeTimestamp}`;
+    }
 
     console.log('[spotPrice] Fetching candles:', url);
 
@@ -246,11 +249,11 @@ async function getRate(rateProvider, network) {
  * Fetch candles for a single hop (base/quote pair)
  * ⭐ Supports per-hop invert: if hop.invert is true, applies 1/price
  */
-async function fetchHopCandles(hop, network, interval, limit) {
+async function fetchHopCandles(hop, network, interval, limit, beforeTimestamp = null) {
     const pool = await searchPool(network, hop.base, hop.quote);
     console.log(`[spotPrice] Hop ${hop.invert ? '!' : ''}${hop.base}/${hop.quote}: Found pool ${pool.name}`);
 
-    let candles = await fetchCandlesFromGecko(pool.address, network, interval, limit);
+    let candles = await fetchCandlesFromGecko(pool.address, network, interval, limit, beforeTimestamp);
 
     // ⭐ Apply per-hop invert if specified
     if (hop.invert) {
@@ -332,7 +335,7 @@ function combineHopCandles(hopCandlesArray) {
  * @param {number} limit - Override limit if needed
  * @returns {Promise<{candles, price, rate, pool, error}>}
  */
-export async function fetchSpotCandles(configString = DEFAULT_CONFIG, limit = null) {
+export async function fetchSpotCandles(configString = DEFAULT_CONFIG, limit = null, beforeTimestamp = null) {
     try {
         const config = parseConfig(configString);
         if (!config) {
@@ -352,7 +355,7 @@ export async function fetchSpotCandles(configString = DEFAULT_CONFIG, limit = nu
 
             // Fetch candles for each hop in parallel
             const hopCandlesPromises = config.hops.map(hop =>
-                fetchHopCandles(hop, config.network, config.interval, config.limit)
+                fetchHopCandles(hop, config.network, config.interval, config.limit, beforeTimestamp)
             );
             const hopCandlesArray = await Promise.all(hopCandlesPromises);
 
@@ -396,7 +399,7 @@ export async function fetchSpotCandles(configString = DEFAULT_CONFIG, limit = nu
         }
 
         // Fetch candles
-        let candles = await fetchCandlesFromGecko(poolAddress, config.network, config.interval, config.limit);
+        let candles = await fetchCandlesFromGecko(poolAddress, config.network, config.interval, config.limit, beforeTimestamp);
         console.log('[spotPrice] Fetched', candles.length, 'candles');
 
         // Note: Rate provider info is available but NOT applied to candles

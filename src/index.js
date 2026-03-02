@@ -64,7 +64,7 @@ app.get('/api/v1/spot-candles', async (req, res) => {
     const max = parseInt(maxTimestamp) || Math.floor(Date.now() / 1000);
 
     try {
-        const spotData = await fetchSpotCandles(ticker, 500);
+        const spotData = await fetchSpotCandles(ticker, 500, max + 3600);
 
         // Compute rate divisor when ticker has :: rate provider
         let rateDivisor = 1;
