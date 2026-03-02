@@ -78,6 +78,46 @@ function parseConfig(input) {
     const invert = parts[parts.length - 1]?.toLowerCase() === 'invert';
     const partsWithoutInvert = invert ? parts.slice(0, -1) : parts;
 
+    // ⭐ COMPOSITE: Pool-address multi-hop with optional rate provider
+    // Format: composite::0xPOOL1+0xPOOL2::0xRATE-interval-limit-network
+    // Example: composite::0x2613cb...+0x4c3b00...::0x89c80a...-hour-500-xdai
+    //   - Pool 1: PNK/WETH (fetched by address from GeckoTerminal)
+    //   - Pool 2: WETH/WXDAI (fetched by address)
+    //   - Rate: sDAI rate provider (divides final price to convert xDAI → sDAI)
+    if (tokenPart.startsWith('composite::')) {
+        const compositePart = tokenPart.slice('composite::'.length);
+
+        // Extract rate provider: find the last :: in the composite part
+        let rateProvider = null;
+        let poolsPart = compositePart;
+        const lastDoubleColon = compositePart.lastIndexOf('::');
+        if (lastDoubleColon !== -1) {
+            rateProvider = compositePart.slice(lastDoubleColon + 2);
+            poolsPart = compositePart.slice(0, lastDoubleColon);
+        }
+
+        // Parse pool addresses (split by +), support ! prefix for invert
+        const hops = poolsPart.split('+').map(hop => {
+            const invertHop = hop.startsWith('!');
+            const cleanHop = invertHop ? hop.slice(1) : hop;
+            return { poolAddress: cleanHop, invert: invertHop };
+        });
+
+        return {
+            isComposite: true,
+            isMultiHop: false,
+            hops,
+            poolAddress: null,
+            base: null,
+            quote: null,
+            rateProvider,
+            interval: partsWithoutInvert[1] || 'hour',
+            limit: parseInt(partsWithoutInvert[2] || '500'),
+            network: partsWithoutInvert[3] || 'xdai',
+            invert,
+        };
+    }
+
     // ⭐ MULTI-HOP: Check if tokenPart contains + (hop separator)
     // ⭐ PER-HOP INVERT: Use ! prefix to invert a hop (e.g., !sDAI/WETH → WETH/sDAI)
     // Example: PNK/WETH+!sDAI/WETH-hour-500-xdai
@@ -386,6 +426,53 @@ export async function fetchSpotCandles(configString = DEFAULT_CONFIG, limit = nu
                 price: latestPrice,
                 rate: null,
                 pool: hopNames,
+                error: null,
+            };
+        }
+
+        // ============================================================
+        // ⭐ COMPOSITE PATH (pool-address multi-hop with rate provider)
+        // ============================================================
+        if (config.isComposite) {
+            console.log(`[spotPrice] ⭐ COMPOSITE: ${config.hops.length} pools, rate=${config.rateProvider?.slice(0, 10) || 'none'}`);
+
+            // Fetch candles for each pool address directly (no search needed)
+            const hopCandlesPromises = config.hops.map(async (hop) => {
+                console.log(`[spotPrice] Composite hop ${hop.invert ? '!' : ''}${hop.poolAddress.slice(0, 10)}...`);
+                let candles = await fetchCandlesFromGecko(hop.poolAddress, config.network, config.interval, config.limit, beforeTimestamp);
+                if (hop.invert) {
+                    candles = candles.map(c => ({ ...c, value: 1 / c.value }));
+                    console.log(`[spotPrice] Composite hop inverted`);
+                }
+                console.log(`[spotPrice] Composite hop: ${candles.length} candles`);
+                return candles;
+            });
+            const hopCandlesArray = await Promise.all(hopCandlesPromises);
+
+            // Combine by multiplying prices at matching timestamps
+            let candles = combineHopCandles(hopCandlesArray);
+
+            // Apply rate provider: divide by sDAI rate to convert xDAI → sDAI
+            if (config.rateProvider) {
+                const rate = await getRate(config.rateProvider, config.network);
+                candles = candles.map(c => ({ ...c, value: c.value / rate }));
+                console.log(`[spotPrice] Composite: applied rate ÷${rate.toFixed(6)} (${candles.length} candles)`);
+            }
+
+            if (config.invert) {
+                candles = candles.map(c => ({ ...c, value: 1 / c.value }));
+            }
+
+            const latestPrice = candles.length > 0 ? candles[candles.length - 1].value : null;
+            const poolNames = config.hops.map(h => h.poolAddress.slice(0, 10)).join('+');
+
+            console.log(`[spotPrice] ⭐ Composite result: ${candles.length} candles, latest: ${latestPrice?.toFixed(6)}`);
+
+            return {
+                candles,
+                price: latestPrice,
+                rate: null,
+                pool: poolNames,
                 error: null,
             };
         }

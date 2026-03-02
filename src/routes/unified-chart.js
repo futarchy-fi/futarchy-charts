@@ -75,7 +75,7 @@ export async function handleUnifiedChartRequest(req, res) {
         return res.json(cachedResponse);
     }
 
-    console.log(`⚡ [Unified Chart] ${proposalId.slice(0, 10)}... (${minTimestamp}→${maxTimestamp}) spot=${includeSpot}`);
+    console.log(`⚡ [Unified Chart] ${proposalId.slice(0, 10)}... (${minTimestamp}→${maxTimestamp}) spot=${includeSpot} applyCurrencyRate=${applyCurrencyRate}`);
     const t0 = Date.now();
 
     try {
@@ -87,6 +87,15 @@ export async function handleUnifiedChartRequest(req, res) {
         const chartStartRange = resolved.startCandleUnix || null;
         const closeTimestamp = resolved.closeTimestamp || null;
         const chainId = resolved.chain || 100;
+
+        // Clamp minTimestamp to startCandleUnix so the first candle matches the registry start
+        const effectiveMinTimestamp = chartStartRange
+            ? Math.max(minTimestamp, chartStartRange)
+            : minTimestamp;
+
+        if (chartStartRange && effectiveMinTimestamp !== minTimestamp) {
+            console.log(`   📅 Clamped minTimestamp ${minTimestamp} → ${effectiveMinTimestamp} (startCandleUnix=${chartStartRange})`);
+        }
 
         console.log(`   🔗 Resolved: ${tradingContractId?.slice(0, 10)}... chain=${chainId} ticker=${ticker?.slice(0, 20) || 'none'} (${Date.now() - t1}ms)`);
 
@@ -118,8 +127,8 @@ export async function handleUnifiedChartRequest(req, res) {
 
         const [currencyRate, yesCandles, noCandles, spotData] = await Promise.all([
             getRateCached(currencyRateProvider, chainId).then(r => { console.log(`      💱 Rate: ${r?.toFixed(4) || 'N/A'} (${Date.now() - tRate}ms)`); return r; }),
-            yesPool ? (candlesCache.get(`yes:${yesPool.id}:${minTimestamp}:${maxTimestamp}`) || fetchCandles(yesPool.id, minTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`yes:${yesPool.id}:${minTimestamp}:${maxTimestamp}`, c); console.log(`      📈 YES candles: ${c.length} (${Date.now() - tYes}ms)`); return c; })) : Promise.resolve([]),
-            noPool ? (candlesCache.get(`no:${noPool.id}:${minTimestamp}:${maxTimestamp}`) || fetchCandles(noPool.id, minTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`no:${noPool.id}:${minTimestamp}:${maxTimestamp}`, c); console.log(`      📉 NO candles: ${c.length} (${Date.now() - tNo}ms)`); return c; })) : Promise.resolve([]),
+            yesPool ? (candlesCache.get(`yes:${yesPool.id}:${effectiveMinTimestamp}:${maxTimestamp}`) || fetchCandles(yesPool.id, effectiveMinTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`yes:${yesPool.id}:${effectiveMinTimestamp}:${maxTimestamp}`, c); console.log(`      📈 YES candles: ${c.length} (${Date.now() - tYes}ms)`); return c; })) : Promise.resolve([]),
+            noPool ? (candlesCache.get(`no:${noPool.id}:${effectiveMinTimestamp}:${maxTimestamp}`) || fetchCandles(noPool.id, effectiveMinTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`no:${noPool.id}:${effectiveMinTimestamp}:${maxTimestamp}`, c); console.log(`      📉 NO candles: ${c.length} (${Date.now() - tNo}ms)`); return c; })) : Promise.resolve([]),
             (includeSpot && ticker) ? (spotCache.get(ticker) || fetchSpotCandles(ticker, 500, maxTimestamp + 3600).then(s => { if (s?.candles?.length > 0) spotCache.set(ticker, s); console.log(`      💹 Spot: ${s?.candles?.length || 0} raw (${Date.now() - tSpot}ms)`); return s; })) : Promise.resolve(null),
         ]);
 
@@ -134,7 +143,7 @@ export async function handleUnifiedChartRequest(req, res) {
                 rateDivisor = currencyRate || 1;
             }
             spotCandles = (spotData.candles || [])
-                .filter(c => c.time >= minTimestamp && c.time <= maxTimestamp)
+                .filter(c => c.time >= effectiveMinTimestamp && c.time <= maxTimestamp)
                 .map(c => ({
                     periodStartUnix: String(c.time),
                     close: String(c.value / rateDivisor)
