@@ -497,10 +497,11 @@ export async function handleMarketEventsRequest(req, res) {
             // Check if ticker already has rate provider (::)
             const tickerHasRateProvider = ticker.includes('::');
             if (rawSpotPrice !== null) {
-                // GeckoTerminal returns price with rate baked in when :: is present
-                // (e.g., GNO in xDAI terms = ~118). Divide by currencyRate to get sDAI price (~96)
-                // Without ::, price is already in base terms, no adjustment needed
-                spotPrice = tickerHasRateProvider ? rawSpotPrice / currencyRate : rawSpotPrice;
+                // Conditional prices are: pool.price * currencyRate (sDAI → xDAI ≈ USD)
+                // Spot must be in the same unit (xDAI ≈ USD):
+                //   :: ticker: GeckoTerminal pool is GNO/WXDAI → already in xDAI, keep as-is
+                //   no :: ticker: price is in sDAI → multiply by currencyRate to get xDAI
+                spotPrice = tickerHasRateProvider ? rawSpotPrice : rawSpotPrice * currencyRate;
             }
             console.log(`   💹 Spot price: $${spotPrice?.toFixed(4) || 'N/A'} (rate ${tickerHasRateProvider ? 'built-in' : 'applied'})`);
         } else {
