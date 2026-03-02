@@ -593,12 +593,14 @@ export async function handleMarketEventsRequest(req, res) {
                         : yesPool.token1?.role?.includes('COMPANY')
                             ? yesPool.volumeToken1
                             : yesPool.volumeToken0;
+                    // volume_usd = company volume * currency rate (sDAI→xDAI)
+                    const rawCompany = parseFloat(companyVolume || '0');
+                    const volumeUsd = String(rawCompany * (currencyRate || 1));
                     return {
                         status: 'ok',
                         pool_id: yesPool.id,
                         volume: companyVolume || '0',
-                        // Return raw currency volume - rate will be applied in frontend based on toggle
-                        volume_usd: currencyVolume || '0'
+                        volume_usd: volumeUsd
                     };
                 })() : undefined,
                 conditional_no: noPool ? (() => {
@@ -612,12 +614,14 @@ export async function handleMarketEventsRequest(req, res) {
                         : noPool.token1?.role?.includes('COMPANY')
                             ? noPool.volumeToken1
                             : noPool.volumeToken0;
+                    // volume_usd = company volume * currency rate (sDAI→xDAI)
+                    const rawCompany = parseFloat(companyVolume || '0');
+                    const volumeUsd = String(rawCompany * (currencyRate || 1));
                     return {
                         status: 'ok',
                         pool_id: noPool.id,
                         volume: companyVolume || '0',
-                        // Return raw currency volume - rate will be applied in frontend based on toggle
-                        volume_usd: currencyVolume || '0'
+                        volume_usd: volumeUsd
                     };
                 })() : undefined
             }

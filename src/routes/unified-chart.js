@@ -172,7 +172,10 @@ export async function handleUnifiedChartRequest(req, res) {
             const companyVolume = pool.token0?.role?.includes('COMPANY')
                 ? pool.volumeToken0 : pool.token1?.role?.includes('COMPANY')
                     ? pool.volumeToken1 : pool.volumeToken0;
-            return { status: 'ok', pool_id: pool.id, volume: companyVolume || '0', volume_usd: currencyVolume || '0' };
+            // volume_usd = company volume * currency rate (sDAI→xDAI)
+            const rawCompany = parseFloat(companyVolume || '0');
+            const volumeUsd = String(rawCompany * (currencyRate || 1));
+            return { status: 'ok', pool_id: pool.id, volume: companyVolume || '0', volume_usd: volumeUsd };
         }
 
         // ── Build unified response ──
