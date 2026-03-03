@@ -172,19 +172,16 @@ export async function handleUnifiedChartRequest(req, res) {
         const yesPrice = yesPool ? parseFloat(yesPool.price) * (currencyRate || 1) : 0;
         const noPrice = noPool ? parseFloat(noPool.price) * (currencyRate || 1) : 0;
 
-        // ── Step 8: Volume ──
+        // ── Step 8: Volume (always in currency terms, e.g. sDAI) ──
         function extractVolume(pool) {
             if (!pool) return undefined;
-            const currencyVolume = pool.token0?.role?.includes('CURRENCY')
+            const currencyVol = pool.token0?.role?.includes('CURRENCY')
                 ? pool.volumeToken0 : pool.token1?.role?.includes('CURRENCY')
                     ? pool.volumeToken1 : pool.volumeToken1;
-            const companyVolume = pool.token0?.role?.includes('COMPANY')
-                ? pool.volumeToken0 : pool.token1?.role?.includes('COMPANY')
-                    ? pool.volumeToken1 : pool.volumeToken0;
-            // volume_usd = company volume * currency rate (sDAI→xDAI)
-            const rawCompany = parseFloat(companyVolume || '0');
-            const volumeUsd = String(rawCompany * (currencyRate || 1));
-            return { status: 'ok', pool_id: pool.id, volume: companyVolume || '0', volume_usd: volumeUsd };
+            const rawCurrency = parseFloat(currencyVol || '0');
+            // volume_usd = currency volume * rate (sDAI→xDAI)
+            const volumeUsd = String(rawCurrency * (currencyRate || 1));
+            return { status: 'ok', pool_id: pool.id, volume: String(rawCurrency), volume_usd: volumeUsd };
         }
 
         // ── Build unified response ──
