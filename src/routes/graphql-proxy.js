@@ -8,7 +8,7 @@
  * SPOT: Also fetches spot candles from GeckoTerminal and includes them
  */
 
-import { fetchSpotCandles } from '../services/spot-price.js';
+import { fetchSpotCandles } from '../services/spot-source.js';
 import { proxyCandlesQuery } from '../adapters/candles-adapter.js';
 import { getRateCached } from '../services/rate-provider.js';
 

@@ -16,7 +16,7 @@ import { resolveProposalId as resolveProposalAdapter } from '../adapters/registr
 import { IS_CHECKPOINT, ENDPOINTS } from '../config/endpoints.js';
 import { fetchPoolsForProposal } from '../services/algebra-client.js';
 import { getRateCached } from '../services/rate-provider.js';
-import { getSpotPrice, fetchSpotCandles } from '../services/spot-price.js';
+import { getSpotPrice, fetchSpotCandles } from '../services/spot-source.js';
 import { responseCache, candlesCache, spotCache, logCacheStats } from '../utils/cache.js';
 import { registerForWarming } from '../utils/warmer.js';
 import { RESPONSE_TTL_SEC } from '../config/cache-config.js';

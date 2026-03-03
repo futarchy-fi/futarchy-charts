@@ -13,7 +13,7 @@ import cors from 'cors';
 import { handleMarketEventsRequest } from './routes/market-events.js';
 import { handleGraphQLRequest } from './routes/graphql-proxy.js';
 import { handleUnifiedChartRequest, refreshChart } from './routes/unified-chart.js';
-import { fetchSpotCandles } from './services/spot-price.js';
+import { fetchSpotCandles } from './services/spot-source.js';
 import { getRateCached } from './services/rate-provider.js';
 import { spotCache, logCacheStats } from './utils/cache.js';
 import { startWarmer, getWarmerStatus } from './utils/warmer.js';
