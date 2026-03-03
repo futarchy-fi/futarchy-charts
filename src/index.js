@@ -13,7 +13,7 @@ import cors from 'cors';
 import { handleMarketEventsRequest } from './routes/market-events.js';
 import { handleGraphQLRequest } from './routes/graphql-proxy.js';
 import { handleUnifiedChartRequest, refreshChart } from './routes/unified-chart.js';
-import { fetchSpotCandles } from './services/spot-source.js';
+import { fetchSpotCandles, USE_FUTARCHY_SPOT } from './services/spot-source.js';
 import { getRateCached } from './services/rate-provider.js';
 import { spotCache, logCacheStats } from './utils/cache.js';
 import { startWarmer, getWarmerStatus } from './utils/warmer.js';
@@ -65,11 +65,17 @@ app.get('/api/v1/spot-candles', async (req, res) => {
     const max = parseInt(maxTimestamp) || Math.floor(Date.now() / 1000);
 
     try {
-        // Use spot cache to avoid hammering GeckoTerminal
-        let spotData = spotCache.get(ticker);
-        if (!spotData) {
+        // When using futarchy-spot, skip cache — SQLite IS the cache
+        // When using CoinGecko, use spot cache to avoid rate limits
+        let spotData;
+        if (USE_FUTARCHY_SPOT) {
             spotData = await fetchSpotCandles(ticker, 500, max + 3600);
-            if (spotData?.candles?.length > 0) spotCache.set(ticker, spotData);
+        } else {
+            spotData = spotCache.get(ticker);
+            if (!spotData) {
+                spotData = await fetchSpotCandles(ticker, 500, max + 3600);
+                if (spotData?.candles?.length > 0) spotCache.set(ticker, spotData);
+            }
         }
 
         // Compute rate divisor when ticker has :: rate provider
@@ -124,7 +130,10 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('─'.repeat(50));
 
     // Start background warmer
-    if (ENABLE_WARMER) {
+    // Start background warmer (disabled when using futarchy-spot — its worker handles refresh)
+    if (USE_FUTARCHY_SPOT) {
+        console.log('🔥 [Warmer] Disabled (using futarchy-spot — SQLite is the cache)');
+    } else if (ENABLE_WARMER) {
         startWarmer(async (params) => {
             await refreshChart(params);
         });

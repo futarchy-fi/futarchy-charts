@@ -11,7 +11,7 @@
 
 import { fetchSpotCandles as fetchFromGecko } from './spot-price.js';
 
-const USE_FUTARCHY_SPOT = (process.env.USE_FUTARCHY_SPOT || '').toLowerCase() === 'true';
+export const USE_FUTARCHY_SPOT = (process.env.USE_FUTARCHY_SPOT || '').toLowerCase() === 'true';
 const FUTARCHY_SPOT_URL = process.env.FUTARCHY_SPOT_URL || 'http://localhost:3032';
 
 console.log(`📡 [Spot Source] ${USE_FUTARCHY_SPOT ? '✅ Using FUTARCHY-SPOT at ' + FUTARCHY_SPOT_URL : '🦎 Using CoinGecko/GeckoTerminal'}`);

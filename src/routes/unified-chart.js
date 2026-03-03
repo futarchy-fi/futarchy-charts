@@ -16,7 +16,7 @@ import { resolveProposalId as resolveProposalAdapter } from '../adapters/registr
 import { IS_CHECKPOINT, ENDPOINTS } from '../config/endpoints.js';
 import { fetchPoolsForProposal } from '../services/algebra-client.js';
 import { getRateCached } from '../services/rate-provider.js';
-import { getSpotPrice, fetchSpotCandles } from '../services/spot-source.js';
+import { getSpotPrice, fetchSpotCandles, USE_FUTARCHY_SPOT } from '../services/spot-source.js';
 import { responseCache, candlesCache, spotCache, logCacheStats } from '../utils/cache.js';
 import { registerForWarming } from '../utils/warmer.js';
 import { RESPONSE_TTL_SEC } from '../config/cache-config.js';
@@ -129,7 +129,11 @@ export async function handleUnifiedChartRequest(req, res) {
             getRateCached(currencyRateProvider, chainId).then(r => { console.log(`      💱 Rate: ${r?.toFixed(4) || 'N/A'} (${Date.now() - tRate}ms)`); return r; }),
             yesPool ? (candlesCache.get(`yes:${yesPool.id}:${effectiveMinTimestamp}:${maxTimestamp}`) || fetchCandles(yesPool.id, effectiveMinTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`yes:${yesPool.id}:${effectiveMinTimestamp}:${maxTimestamp}`, c); console.log(`      📈 YES candles: ${c.length} (${Date.now() - tYes}ms)`); return c; })) : Promise.resolve([]),
             noPool ? (candlesCache.get(`no:${noPool.id}:${effectiveMinTimestamp}:${maxTimestamp}`) || fetchCandles(noPool.id, effectiveMinTimestamp, maxTimestamp, chainId).then(c => { candlesCache.set(`no:${noPool.id}:${effectiveMinTimestamp}:${maxTimestamp}`, c); console.log(`      📉 NO candles: ${c.length} (${Date.now() - tNo}ms)`); return c; })) : Promise.resolve([]),
-            (includeSpot && ticker) ? (spotCache.get(ticker) || fetchSpotCandles(ticker, 500, maxTimestamp + 3600).then(s => { if (s?.candles?.length > 0) spotCache.set(ticker, s); console.log(`      💹 Spot: ${s?.candles?.length || 0} raw (${Date.now() - tSpot}ms)`); return s; })) : Promise.resolve(null),
+            (includeSpot && ticker) ? (
+                USE_FUTARCHY_SPOT
+                    ? fetchSpotCandles(ticker, 500, maxTimestamp + 3600).then(s => { console.log(`      💹 Spot: ${s?.candles?.length || 0} raw [futarchy-spot] (${Date.now() - tSpot}ms)`); return s; })
+                    : (spotCache.get(ticker) || fetchSpotCandles(ticker, 500, maxTimestamp + 3600).then(s => { if (s?.candles?.length > 0) spotCache.set(ticker, s); console.log(`      💹 Spot: ${s?.candles?.length || 0} raw (${Date.now() - tSpot}ms)`); return s; }))
+            ) : Promise.resolve(null),
         ]);
 
         console.log(`   ⏱️ Parallel fetch total: ${Date.now() - t4}ms`);
