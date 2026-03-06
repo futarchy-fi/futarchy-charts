@@ -78,25 +78,14 @@ app.get('/api/v1/spot-candles', async (req, res) => {
             }
         }
 
-        // Compute rate divisor when ticker has :: rate provider
-        let rateDivisor = 1;
-        if (ticker.includes('::')) {
-            const rateProviderAddress = ticker.split('::')[1]?.split('-')[0];
-            const networkPart = ticker.split('-').pop() || 'xdai';
-            const chainId = networkPart === 'xdai' ? 100 : 1;
-            if (rateProviderAddress) {
-                rateDivisor = await getRateCached(rateProviderAddress, chainId);
-            }
-        }
-
         const candles = (spotData?.candles || [])
             .filter(c => c.time >= min && c.time <= max)
             .map(c => ({
                 periodStartUnix: String(c.time),
-                close: String(c.value / rateDivisor)
+                close: String(c.value)
             }));
 
-        console.log(`📊 [Spot Candles] ticker=${ticker.slice(0, 20)}... → ${candles.length} candles (rate: ${rateDivisor.toFixed(4)})`);
+        console.log(`📊 [Spot Candles] ticker=${ticker.slice(0, 20)}... → ${candles.length} candles (rate removed)`);
         logCacheStats();
         res.json({ spotCandles: candles });
     } catch (error) {

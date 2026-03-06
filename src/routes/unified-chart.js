@@ -138,24 +138,20 @@ export async function handleUnifiedChartRequest(req, res) {
 
         console.log(`   ⏱️ Parallel fetch total: ${Date.now() - t4}ms`);
 
-        // ── Step 5: Process spot candles (filter + rate-divide) ──
+        // ── Step 5: Process spot candles (RAW - no rate logic) ──
         let spotCandles = [];
         let spotPrice = null;
         if (spotData && ticker) {
-            let rateDivisor = 1;
-            if (ticker.includes('::')) {
-                rateDivisor = currencyRate || 1;
-            }
             spotCandles = (spotData.candles || [])
                 .filter(c => c.time >= effectiveMinTimestamp && c.time <= maxTimestamp)
                 .map(c => ({
                     periodStartUnix: String(c.time),
-                    close: String(c.value / rateDivisor)
+                    close: String(c.value)
                 }));
 
             const rawSpotPrice = spotData.price;
             if (rawSpotPrice !== null) {
-                spotPrice = ticker.includes('::') ? rawSpotPrice / (currencyRate || 1) : rawSpotPrice;
+                spotPrice = rawSpotPrice;
             }
         }
 
